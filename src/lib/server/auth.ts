@@ -2,6 +2,7 @@
 // No 'server-only' import: the migrate script loads this file outside Next.
 import { betterAuth } from 'better-auth';
 import { nextCookies } from 'better-auth/next-js';
+import { attachDatabasePool } from '@vercel/functions';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { STOP_ID_RE } from '../mbta/live'; // relative: the auth CLI does not resolve @/ paths
@@ -13,8 +14,14 @@ function social<K extends string>(id: K, clientId?: string, clientSecret?: strin
   return clientId && clientSecret ? { [id]: { clientId, clientSecret } } : {};
 }
 
+// Serverless instances freeze between requests and Neon drops their idle sockets; without this the pool hands out
+// a dead connection, getSession fails ("Connection terminated unexpectedly") and signed-in users see the landing page.
+const pool = new Pool({ connectionString: env.DATABASE_URL, idleTimeoutMillis: 5_000 });
+pool.on('error', (err) => console.error('[auth] idle pg client error', err.message));
+attachDatabasePool(pool);
+
 export const auth = betterAuth({
-  database: new Pool({ connectionString: env.DATABASE_URL }),
+  database: pool,
   emailAndPassword: { enabled: true },
   socialProviders: {
     ...social('google', env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),

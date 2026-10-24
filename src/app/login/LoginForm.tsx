@@ -27,7 +27,10 @@ export default function LoginForm({ providers }: { providers: (keyof typeof LABE
         : await authClient.signIn.email({ email, password });
     setBusy(false);
     if (error) setError(error.message ?? 'Something went wrong. Try again.');
-    else router.push('/');
+    else {
+      router.push('/');
+      router.refresh(); // drop the cached signed-out render of '/'
+    }
   }
 
   return (
