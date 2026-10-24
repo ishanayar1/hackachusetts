@@ -8,27 +8,123 @@ import { connection } from 'next/server';
 import type { CrashSpot } from '@/lib/crash';
 import { getCrashSpots } from '@/lib/server/crash-data';
 import { riskExclusionPolygons, scorePath, type RiskScore } from '@/lib/safe-route';
-// Step-free routing: reuse the existing router service + static data.
-import { getAlertsOrDemo, parseClosedParam, planWithClosures } from '@/lib/lastmile-service';
+// Step-free routing + station status: reuse the existing router service + static data.
+import { getAlertsOrDemo, parseClosedParam, planWithClosures, stationDetail } from '@/lib/lastmile-service';
 import { getParentOf, loadDemoAlerts } from '@/lib/server/mbta';
 import { getStaticData } from '@/lib/server/static-data';
 
-// ---------------------------------------------------------------- step-free intent
-// Rough heuristic: does the user want a STEP-FREE TRAIN trip (wheelchair / no stairs),
-// as opposed to the safest bike/walk route? Keywords only — good enough for a demo.
-const STEP_FREE_RE = /\b(step[\s-]?free|wheelchair|accessible|no stairs|elevator|step free)\b/i;
+// ---------------------------------------------------------------- conversational intents
+// Rough, keyword-based. Good enough for a demo; if an LLM key is set the from/to
+// extraction already upgrades automatically. Order matters: greet, then status
+// questions, then step-free, then the bike/walk fallback.
 
-/** Match a free-text place to a subway station id by name (case-insensitive, substring). */
+const GREETING_RE = /^\s*(hi|hey|hello|yo|gm|good\s*(morning|afternoon|evening)|hiya|sup|namaste|vanakkam)\b/i;
+const STEP_FREE_RE = /\b(step[\s-]?free|wheelchair|accessible|accessibility|no stairs|step free)\b/i;
+// "is the elevator at X working", "is X accessible", "elevator status at X"
+const STATUS_RE = /\b(working|out of service|broken|down|status|accessible|usable)\b/i;
+const BROKEN_NOW_RE = /\b(what('?s| is)?\s+broken|broken now|outages?|which (elevators?|stations?)|closures?\s+now|down right now)\b/i;
+const HELP_RE = /\b(help|what can you (do|answer)|how do you work|options)\b/i;
+
+const GREETING_REPLY =
+  "Hi! 👋 I'm the LastMile assistant. I can:\n" +
+  '• plan a step-free train trip — "step-free from Alewife to Harvard"\n' +
+  '• check a station — "is the elevator at Park Street working?"\n' +
+  '• list what\'s broken now — "what\'s broken right now?"\n' +
+  '• find a low-crash walk/bike route — "safest walk from Fenway to the Common"\n' +
+  'What do you need?';
+
+/** Match a free-text place to a subway station id by name (case-insensitive). */
 function matchStation(place: string, stations: { id: string; name: string }[]): { id: string; name: string } | null {
-  const q = place.trim().toLowerCase();
+  const q = place
+    .trim()
+    .toLowerCase()
+    .replace(/[?.!,]/g, ' ') // drop punctuation that clings to the name ("park street?")
+    .replace(/\b(station|stop|the)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (!q) return null;
-  // Exact name first, then startsWith, then substring — the most specific win.
   return (
     stations.find((s) => s.name.toLowerCase() === q) ??
     stations.find((s) => s.name.toLowerCase().startsWith(q)) ??
     stations.find((s) => s.name.toLowerCase().includes(q)) ??
     null
   );
+}
+
+/** Pull a likely station name out of a status question ("is the elevator at Park Street working?"). */
+function extractStationPhrase(message: string): string {
+  return message
+    .replace(/\b(is|are|the|elevator|elevators|escalator|lift|ramp|at|in|on|working|out of service|broken|down|status|accessible|usable|right now|now|step[\s-]?free|wheelchair|\?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A station-status answer: "is X working / accessible?" */
+async function stationStatusReply(message: string, origin: string): Promise<Response | null> {
+  if (!STATUS_RE.test(message) || BROKEN_NOW_RE.test(message)) return null;
+  let data;
+  try {
+    data = getStaticData();
+  } catch {
+    return Response.json({ ok: false, reply: 'Station data is not available right now. Try again in a moment.' });
+  }
+  const phrase = extractStationPhrase(message);
+  const station = matchStation(phrase, data.stations);
+  if (!station) return null; // no station named — let other intents try
+
+  try {
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(origin));
+    const detail = stationDetail(data, station.id, live.alerts, live.closedFacilityIds);
+    if (!detail) return Response.json({ ok: false, reply: `I couldn't find ${station.name}.` });
+    const st = detail.status;
+    const brokenFacs = detail.facilities.filter((f) => f.closed);
+    if (st.stepFree) {
+      return Response.json({
+        ok: true,
+        stationStatus: true,
+        reply: `♿ ${station.name} is step-free right now. ${brokenFacs.length ? `(${brokenFacs.length} piece(s) of equipment flagged, but a step-free path still exists.)` : 'No elevator or ramp closures reported.'}`,
+      });
+    }
+    const names = brokenFacs.map((f) => f.name).filter(Boolean).slice(0, 3);
+    const detailStr = names.length ? ` Affected: ${names.join(', ')}.` : '';
+    return Response.json({
+      ok: true,
+      stationStatus: true,
+      reply: `⚠️ ${station.name} is NOT step-free right now — broken equipment blocks a step-free path.${detailStr} Confirm with the MBTA before you travel.`,
+    });
+  } catch {
+    return Response.json({ ok: false, reply: 'Live status is unavailable right now. Try again shortly.' });
+  }
+}
+
+/** A "what's broken now?" answer: list current elevator/escalator closures. */
+async function brokenNowReply(message: string, origin: string): Promise<Response | null> {
+  if (!BROKEN_NOW_RE.test(message)) return null;
+  let data;
+  try {
+    data = getStaticData();
+  } catch {
+    return Response.json({ ok: false, reply: 'Station data is not available right now.' });
+  }
+  try {
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(origin));
+    const blocked = data.stations
+      .map((s) => ({ s, st: stationDetail(data, s.id, live.alerts, live.closedFacilityIds)?.status }))
+      .filter((x) => x.st && !x.st.stepFree && x.st.blockedBy.length > 0)
+      .map((x) => x.s.name);
+    if (!blocked.length) {
+      return Response.json({ ok: true, brokenNow: true, reply: '✅ Good news — no stations are blocked by broken step-free equipment right now.' });
+    }
+    const list = blocked.slice(0, 8).join(', ');
+    const more = blocked.length > 8 ? ` …and ${blocked.length - 8} more.` : '';
+    return Response.json({
+      ok: true,
+      brokenNow: true,
+      reply: `⚠️ ${blocked.length} station(s) are not step-free right now: ${list}.${more}`,
+    });
+  } catch {
+    return Response.json({ ok: false, reply: 'Live outage data is unavailable right now. Try again shortly.' });
+  }
 }
 
 /** Build a plain-text reply for a step-free train route. No LLM needed. */
@@ -255,6 +351,53 @@ async function osrm(a: Geo, b: Geo): Promise<WalkRoute[]> {
 }
 
 // --------------------------------------------------------------- intent (Gemini)
+type Intent = 'greet' | 'help' | 'broken_now' | 'station_status' | 'step_free' | 'safe_route' | 'unknown';
+type Classified = { intent: Intent; station?: string; from?: string; to?: string };
+
+/**
+ * Classify the user's message into one intent and pull out any place names,
+ * tolerating typos and loose phrasing. Uses Gemini when a key is set; returns
+ * null otherwise so the caller falls back to the keyword rules.
+ */
+async function geminiClassify(message: string): Promise<Classified | null> {
+  if (!geminiUsable(message)) return null;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL?.trim() || 'gemini-flash-latest'}:generateContent?key=${process.env.GEMINI_API_KEY!.trim()}`;
+  const prompt =
+    'You classify messages for a Boston MBTA step-free transit assistant. The user may make typos. ' +
+    'Return STRICT JSON: {"intent": one of ["greet","help","broken_now","station_status","step_free","safe_route","unknown"], ' +
+    '"station": "<a single station name if they ask about one station, else empty>", ' +
+    '"from": "<origin for a trip, else empty>", "to": "<destination for a trip, else empty>"}. ' +
+    'Rules: greet = hi/hello/good morning. help = what can you do. broken_now = asking what elevators/stations are down now. ' +
+    'station_status = asking if ONE station or its elevator is working/accessible. step_free = wants a wheelchair/no-stairs TRIP between two places. ' +
+    'safe_route = wants the safest walk/bike route between two places. Fix obvious typos in station names. ' +
+    `Message: ${JSON.stringify(message)}`;
+  try {
+    geminiSpend();
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 2048,
+          // gemini-flash-latest is a "thinking" model that spends output tokens on
+          // internal reasoning; without this the JSON gets truncated mid-object.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? '';
+    const p = JSON.parse(text) as Classified;
+    if (!p.intent) return null;
+    return p;
+  } catch {
+    return null; // fall back to keyword rules
+  }
+}
+
 function parseFromTo(text: string): { from: string; to: string } | null {
   const t = ` ${text.trim()} `;
   let m = t.match(/\bfrom\s+(.+?)\s+to\s+(.+?)\s*[?.!]*\s*$/i);
@@ -347,19 +490,64 @@ async function nearestStop(g: Geo): Promise<string | null> {
 export async function POST(request: Request) {
   await connection();
   const body = (await request.json().catch(() => ({}))) as { message?: string };
-  const message = (body.message ?? '').trim();
+  let message = (body.message ?? '').trim();
   if (!message) {
     return Response.json({ reply: 'Ask me for a safe route, e.g. "from Fenway Park to Boston Common".', ok: false });
   }
 
-  // Step-free train trips (wheelchair / no stairs) take priority over the bike flow.
-  const stepFree = await stepFreeReply(message, new URL(request.url).origin);
+  const origin = new URL(request.url).origin;
+
+  // When a Gemini key is set, classify first — this tolerates typos and loose
+  // phrasing. We turn the classification into a clean canonical message and let
+  // the existing keyword handlers do the actual work. No key -> this is null and
+  // we fall straight through to the keyword rules below.
+  const cls = await geminiClassify(message);
+  if (cls) {
+    if (cls.intent === 'greet') return Response.json({ ok: true, greeting: true, reply: GREETING_REPLY });
+    if (cls.intent === 'help') return Response.json({ ok: true, help: true, reply: GREETING_REPLY });
+    if (cls.intent === 'broken_now') {
+      const r = await brokenNowReply("what's broken now", origin);
+      if (r) return r;
+    }
+    if (cls.intent === 'station_status' && cls.station) {
+      const r = await stationStatusReply(`is ${cls.station} accessible working`, origin);
+      if (r) return r;
+    }
+    if (cls.intent === 'step_free' && cls.from && cls.to) {
+      const r = await stepFreeReply(`step-free from ${cls.from} to ${cls.to}`, origin);
+      if (r) return r;
+    }
+    // safe_route / unknown fall through to the geocode+route flow below,
+    // using the corrected from/to when the classifier gave them.
+    if ((cls.intent === 'safe_route' || cls.intent === 'unknown') && cls.from && cls.to) {
+      // seed the keyword extractor with a clean "from X to Y" it parses reliably
+      message = `from ${cls.from} to ${cls.to}`;
+    }
+  }
+
+  // Conversational intents (keyword rules), in priority order. Each returns null if it doesn't apply.
+  if (GREETING_RE.test(message) && message.trim().length < 30) {
+    return Response.json({ ok: true, greeting: true, reply: GREETING_REPLY });
+  }
+  if (HELP_RE.test(message)) {
+    return Response.json({ ok: true, help: true, reply: GREETING_REPLY });
+  }
+  const broken = await brokenNowReply(message, origin);
+  if (broken) return broken;
+  const status = await stationStatusReply(message, origin);
+  if (status) return status;
+  const stepFree = await stepFreeReply(message, origin);
   if (stepFree) return stepFree;
 
   const places = await geminiExtract(message);
   if (!places?.from || !places?.to) {
-    return Response.json({ reply: `I can't help with that. Please tell me where do you want to go.`, ok: false });
-
+    return Response.json({
+      ok: false,
+      reply:
+        "I'm not sure what you need. I can plan a step-free trip, check if a station is accessible, " +
+        'list what\'s broken now, or find a safe walk/bike route. Try "step-free from Alewife to Harvard" ' +
+        'or "is the elevator at Park Street working?".',
+    });
   }
 
   const [from, to] = await Promise.all([geocode(places.from), geocode(places.to)]);
