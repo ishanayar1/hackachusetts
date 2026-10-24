@@ -1,14 +1,63 @@
 @import "tailwindcss";
 
+/* ---------- Design tokens (Transit Pop look, compact type and icon sizes) ---------- */
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
+  --background: #ffffff;
+  --foreground: #16181d;
+  --ink: #16181d;
+  --ink-2: #3a3f4a;
+  --muted: #5b6270;
+  --line: #e6e8ec;
+  --line-2: #c9cdd4;
+  --soft: #f5f6f8;
+  --soft-2: #eef0f3;
+  --mapbg: #f3f1ec;
+  --t-red: #da291c;
+  --t-orange: #ed8b00;
+  --t-blue: #003da5;
+  --t-green: #00843d;
+  --t-yellow: #ffc72c;
+  --ok: #0b7a3b;
+  --ok-bg: #e6f5ec;
+  --warn: #9a5b00;
+  --warn-bg: #fff3dc;
+  --bad: #b4231a;
+  --bad-bg: #fdecea;
+  --sh1: 0 1px 2px rgba(22, 24, 29, 0.06), 0 1px 1px rgba(22, 24, 29, 0.04);
+  --sh2: 0 2px 4px rgba(22, 24, 29, 0.05), 0 8px 24px rgba(22, 24, 29, 0.08);
+  --sh3: 0 4px 8px rgba(22, 24, 29, 0.06), 0 24px 56px rgba(22, 24, 29, 0.16);
+  --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
   color-scheme: light;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-soft: var(--soft);
+  --color-soft-2: var(--soft-2);
+  --color-mapbg: var(--mapbg);
+  --color-t-red: var(--t-red);
+  --color-t-orange: var(--t-orange);
+  --color-t-blue: var(--t-blue);
+  --color-t-green: var(--t-green);
+  --color-t-yellow: var(--t-yellow);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-bad: var(--bad);
+  --color-bad-bg: var(--bad-bg);
+  --shadow-sh1: var(--sh1);
+  --shadow-sh2: var(--sh2);
+  --shadow-sh3: var(--sh3);
+  --radius-card: 20px;
+  --radius-sheet: 28px;
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
 html,
@@ -19,66 +68,315 @@ body {
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
 }
 
 /* Visible focus for keyboard users everywhere. */
 :focus-visible {
-  outline: 3px solid #1d4ed8;
+  outline: 3px solid var(--t-blue);
   outline-offset: 2px;
 }
 
-/* App shell. Phone: header, map (about half the screen), scrollable panel. Desktop: panel left, map right. */
-.app-shell {
-  display: grid;
-  height: 100dvh;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: auto 48dvh minmax(0, 1fr);
-  grid-template-areas: "header" "map" "panel";
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+/* Motion: pages fade up, sheets and popovers spring in. */
+@keyframes lm-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
-.app-header {
-  grid-area: header;
+@keyframes lm-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+@keyframes lm-shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+.lm-in {
+  animation: lm-in 0.28s var(--spring) both;
+}
+.lm-pop {
+  animation: lm-pop 0.22s var(--spring) both;
+  transform-origin: top right;
+}
+.lm-shimmer {
+  background: linear-gradient(100deg, #f1f2f4 30%, #fafafb 50%, #f1f2f4 70%);
+  background-size: 300% 100%;
+  animation: lm-shimmer 1s linear infinite;
+}
+
+/* ---------- APP SHELL (owned by the shell agent) ---------- */
+/* App shell. The map fills the screen; a top bar and the panel float over it.
+   Phone: the panel is a bottom sheet (peek / half / full) and the page nav is pinned to the bottom.
+   Desktop: the panel is a floating card on the left. --sheet-h = visible sheet height (0px on desktop). */
+.app-shell {
+  --sheet-h: var(--sheet-phone, 38dvh);
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--mapbg);
+  color: var(--ink);
 }
 .app-map {
-  grid-area: map;
-  position: relative;
-  min-height: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background: var(--mapbg);
+}
+.app-topbar {
+  position: fixed;
+  z-index: 20;
+  top: calc(12px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.app-topbar > * {
+  pointer-events: auto;
+}
+.app-layers-pop {
+  position: fixed;
+  z-index: 30;
+  top: calc(68px + env(safe-area-inset-top));
+  right: 12px;
+  width: 320px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100dvh - var(--sheet-h, 38dvh) - 92px);
+  min-height: 160px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .app-panel {
-  grid-area: panel;
-  overflow-y: auto;
+  position: fixed;
+  z-index: 15;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--sheet-h);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 28px 28px 0 0;
+  box-shadow: var(--sh3);
+  transition: height 0.45s var(--spring);
+}
+.app-panel[data-dragging="true"] {
+  transition: none;
+}
+.app-scroll {
+  flex: 1 1 auto;
   min-height: 0;
-  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px calc(96px + env(safe-area-inset-bottom));
+}
+/* Page nav: pinned to the bottom of the screen on phone. */
+.app-nav {
+  position: fixed;
+  z-index: 25;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px 10px max(10px, env(safe-area-inset-bottom));
+  background: #fff;
+  border-top: 1px solid var(--line);
+}
+.app-step {
+  position: absolute;
+  z-index: 10;
+  top: calc(72px + env(safe-area-inset-top));
+  left: 12px;
+  right: 12px;
 }
 
 @media (min-width: 768px) {
   .app-shell {
-    grid-template-columns: 400px minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
-    grid-template-areas: "header map" "panel map";
-    padding-bottom: env(safe-area-inset-bottom);
+    --sheet-h: 0px;
+  }
+  .app-topbar {
+    top: calc(16px + env(safe-area-inset-top));
+    left: 432px;
+    right: 16px;
+  }
+  .app-layers-pop {
+    top: calc(72px + env(safe-area-inset-top));
+    right: 16px;
+    max-height: calc(100dvh - 96px);
   }
   .app-panel {
-    border-right: 1px solid #cbd5e1;
+    left: 16px;
+    top: 16px;
+    bottom: 16px;
+    right: auto;
+    width: 400px;
+    height: auto;
+    border-bottom: 1px solid var(--line);
+    border-radius: 28px;
+    transition: none;
+  }
+  .app-scroll {
+    padding: 16px 16px 16px;
+  }
+  /* Desktop: nav sits at the top of the panel, under the page title, and stays in view. */
+  .app-nav {
+    position: sticky;
+    top: 0;
+    left: auto;
+    right: auto;
+    bottom: auto;
+    margin: -8px -4px 0;
+    padding: 8px 4px 12px;
+    border-top: 0;
+  }
+  .app-step {
+    left: 432px;
+    right: auto;
+    width: 384px;
+  }
+}
+/* ---------- END APP SHELL ---------- */
+
+/* ---------- MAP (owned by the map agent) ---------- */
+/* Everything here is scoped under .app-map (and given extra specificity where needed) so it beats
+   MapLibre's own stylesheet, which loads later. */
+.app-map {
+  background: var(--mapbg);
+}
+
+/* Controls: top-right, below the floating top bar (top 72px). */
+.app-map .maplibregl-ctrl-top-right {
+  top: calc(72px + env(safe-area-inset-top, 0px));
+  right: 12px;
+}
+.app-map .maplibregl-ctrl-top-right .maplibregl-ctrl {
+  margin: 0 0 8px;
+}
+/* Phone: bottom controls (attribution) sit above the bottom sheet. */
+@media (max-width: 767.98px) {
+  .app-map .maplibregl-ctrl-bottom-right,
+  .app-map .maplibregl-ctrl-bottom-left {
+    bottom: var(--sheet-h, 38dvh);
+    transition: bottom 0.25s ease;
   }
 }
 
-/* Keep MapLibre's attribution readable and its controls finger-sized. */
-.maplibregl-ctrl-group button {
-  width: 44px !important;
-  height: 44px !important;
+/* Control groups: white rounded card, soft shadow, no harsh border. */
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 0;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--sh2);
 }
-/* The tapped-spot popup: room for its close button, which is finger-sized too.
-   Scoped under .app-map so these beat MapLibre's own stylesheet, which loads later. */
+/* Finger-sized buttons (44px). */
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group button {
+  width: 44px;
+  height: 44px;
+  border-radius: 0;
+  transition: background-color 0.2s;
+}
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group button + button {
+  border-top: 1px solid var(--line);
+}
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group button:not(:disabled):hover {
+  background-color: var(--soft);
+}
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group button:not(:disabled):active {
+  background-color: var(--soft-2);
+}
+/* Focus ring drawn inside the button so the rounded group does not clip it. */
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group button:focus {
+  box-shadow: none;
+}
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group button:focus-visible {
+  outline: 3px solid var(--t-blue);
+  outline-offset: -3px;
+}
+.app-map .maplibregl-ctrl.maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+  background-size: 30px 30px;
+}
+
+/* Compact attribution: small white pill. */
+.app-map .maplibregl-ctrl.maplibregl-ctrl-attrib {
+  margin: 0 12px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--sh1);
+  color: var(--muted);
+}
+
+/* The tapped-spot popup: rounded card with room for its finger-sized close button. */
 .app-map .maplibregl-popup-content {
-  padding: 12px 40px 12px 12px;
+  padding: 12px 48px 12px 12px;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: var(--sh3);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.45;
 }
 .app-map .maplibregl-popup-close-button {
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
   width: 36px;
   height: 36px;
+  border-radius: 999px;
+  color: var(--muted);
   font-size: 22px;
+  line-height: 1;
+  transition:
+    background-color 0.2s,
+    color 0.2s;
 }
+.app-map .maplibregl-popup-close-button:hover {
+  background-color: var(--soft);
+  color: var(--ink);
+}
+.app-map .maplibregl-popup-close-button:active {
+  background-color: var(--soft-2);
+}
+.app-map .maplibregl-popup-close-button:focus-visible {
+  outline: 3px solid var(--t-blue);
+  outline-offset: -3px;
+}
+/* A slightly smaller tip, white to match the card. */
+.app-map .maplibregl-popup-tip {
+  border-width: 8px;
+}
+.app-map .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+.app-map .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+.app-map .maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: #fff;
+}
+.app-map .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+.app-map .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+.app-map .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
+  border-top-color: #fff;
+}
+.app-map .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: #fff;
+}
+.app-map .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: #fff;
+}
+/* ---------- END MAP ---------- */
 
 @media (prefers-reduced-motion: reduce) {
   *,

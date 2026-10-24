@@ -54,9 +54,13 @@ export function vehiclesGeojson(vehicles: readonly Vehicle[] | undefined): GeoJS
     features: (vehicles ?? [])
       .filter((v) => !v.stale && Number.isFinite(v.lat) && Number.isFinite(v.lon))
       .map((v) => {
-        const color = ROUTE_COLORS[v.routeId] ?? '#1d4ed8';
+        const bus = v.mode === 'bus';
+        const color = bus ? '#FFC72C' : (ROUTE_COLORS[v.routeId] ?? '#1d4ed8');
         const props: Record<string, unknown> = {
           id: v.id,
+          mode: bus ? 'bus' : 'subway',
+          // Cartoon vehicle icon, drawn on demand by MapView ("lm-veh-bus" or "lm-veh-train-<hex>").
+          vicon: bus ? 'lm-veh-bus' : `lm-veh-train-${color.replace('#', '').toLowerCase()}`,
           routeId: v.routeId,
           headsign: v.headsign ?? '',
           status: v.status,
@@ -65,7 +69,7 @@ export function vehiclesGeojson(vehicles: readonly Vehicle[] | undefined): GeoJS
           color,
           icon: arrowIconName(color),
         };
-        if (typeof v.bearing === 'number' && Number.isFinite(v.bearing)) props.bearing = v.bearing;
+        if (!bus && typeof v.bearing === 'number' && Number.isFinite(v.bearing)) props.bearing = v.bearing;
         return { type: 'Feature', properties: props, geometry: { type: 'Point', coordinates: [v.lon, v.lat] } };
       }),
   };

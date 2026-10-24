@@ -1,0 +1,113 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]: LastMile
+    - navigation "Pages" [ref=e13]:
+      - link "Trip" [ref=e14] [cursor=pointer]:
+        - /url: "#trip"
+      - link "Broken now" [ref=e25] [cursor=pointer]:
+        - /url: "#broken"
+      - link "Station" [ref=e42] [cursor=pointer]:
+        - /url: "#station"
+      - link "Street safety" [ref=e62] [cursor=pointer]:
+        - /url: "#safety"
+      - link "My stations" [ref=e81] [cursor=pointer]:
+        - /url: "#mine"
+      - link "More" [ref=e93] [cursor=pointer]:
+        - /url: "#more"
+    - generic [ref=e109]:
+      - generic "Elevators out right now" [ref=e110]: 15 OUT
+      - generic [ref=e123]: 52°F DRY
+      - generic [ref=e124]: LIVE · 2 MIN
+  - img "Map of central Boston subway lines and step-free stations. Tap an empty spot to drop a pin." [ref=e126]:
+    - generic [ref=e128]:
+      - generic [ref=e134]: CHARLES RIVER
+      - generic [ref=e135]: HARBOR
+    - generic [ref=e136]: Boston Common
+    - generic [aria-hidden]:
+      - generic: "41"
+      - generic: "33"
+      - generic: "29"
+      - generic: "26"
+      - generic: "22"
+    - generic [aria-hidden]:
+      - generic: B
+      - generic: B
+      - generic: B
+      - generic: B
+    - generic [ref=e169]:
+      - 'button "Alewife: Step-free" [ref=e170] [cursor=pointer]':
+        - generic [ref=e190]: Alewife
+      - 'button "Davis: Step-free" [ref=e191] [cursor=pointer]':
+        - generic [ref=e211]: Davis
+      - 'button "Porter: Step-free" [ref=e212] [cursor=pointer]':
+        - generic [ref=e232]: Porter
+      - 'button "Harvard: Step-free" [ref=e233] [cursor=pointer]':
+        - generic [ref=e253]: Harvard
+      - 'button "Central: Step-free" [ref=e254] [cursor=pointer]':
+        - generic [ref=e274]: Central
+      - 'button "Kendall/MIT: Step-free" [ref=e275] [cursor=pointer]':
+        - generic [ref=e295]: Kendall/MIT
+      - 'button "Charles/MGH: Step-free" [ref=e296] [cursor=pointer]':
+        - generic [ref=e316]: Charles/MGH
+      - 'button "Park Street: Partly step-free" [ref=e317] [cursor=pointer]':
+        - generic [ref=e335]: Park Street · partly
+      - 'button "Downtown Crossing: Partly step-free" [ref=e336] [cursor=pointer]':
+        - generic [ref=e354]: Downtown Crossing · partly
+      - 'button "South Station: Step-free" [ref=e355] [cursor=pointer]':
+        - generic [ref=e375]: South Station
+      - 'button "Broadway: Step-free" [ref=e376] [cursor=pointer]':
+        - generic [ref=e396]: Broadway
+      - 'button "Andrew: Step-free" [ref=e397] [cursor=pointer]':
+        - generic [ref=e417]: Andrew
+      - 'button "JFK/UMass: Step-free" [ref=e418] [cursor=pointer]':
+        - generic [ref=e438]: JFK/UMass
+      - 'button "North Station: Step-free" [ref=e439] [cursor=pointer]':
+        - generic [ref=e459]: North Station
+      - 'button "Haymarket: Step-free" [ref=e460] [cursor=pointer]':
+        - generic [ref=e480]: Haymarket
+      - 'button "State: Step-free" [ref=e481] [cursor=pointer]':
+        - generic [ref=e501]: State
+      - 'button "Chinatown: Step-free" [ref=e502] [cursor=pointer]':
+        - generic [ref=e522]: Chinatown
+      - 'button "Tufts Medical Center: Step-free" [ref=e523] [cursor=pointer]':
+        - generic [ref=e543]: Tufts Medical Center
+      - 'button "Back Bay: Step-free" [ref=e544] [cursor=pointer]':
+        - generic [ref=e564]: Back Bay
+      - 'button "Massachusetts Avenue: Step-free" [ref=e565] [cursor=pointer]':
+        - generic [ref=e585]: Massachusetts Avenue
+      - 'button "Ruggles: Step-free" [ref=e586] [cursor=pointer]':
+        - generic [ref=e606]: Ruggles
+      - 'button "Airport: Step-free" [ref=e607] [cursor=pointer]':
+        - generic [ref=e627]: Airport
+      - 'button "Maverick: Step-free" [ref=e628] [cursor=pointer]':
+        - generic [ref=e648]: Maverick
+      - 'button "Aquarium: Step-free" [ref=e649] [cursor=pointer]':
+        - generic [ref=e669]: Aquarium
+      - 'button "Government Center: Step-free" [ref=e670] [cursor=pointer]':
+        - generic [ref=e690]: Government Center
+      - 'button "Bowdoin: Not step-free" [ref=e691] [cursor=pointer]':
+        - generic [ref=e723]: Bowdoin · no step-free
+      - 'button "Lechmere: Step-free" [ref=e724] [cursor=pointer]':
+        - generic [ref=e744]: Lechmere
+      - 'button "Science Park/West End: Step-free" [ref=e745] [cursor=pointer]':
+        - generic [ref=e765]: Science Park/West End
+      - 'button "Boylston: Not step-free" [ref=e766] [cursor=pointer]':
+        - generic [ref=e798]: Boylston · no step-free
+      - 'button "Arlington: Step-free" [ref=e799] [cursor=pointer]':
+        - generic [ref=e819]: Arlington
+      - 'button "Copley: Step-free" [ref=e820] [cursor=pointer]':
+        - generic [ref=e840]: Copley
+      - 'button "Hynes: Step-free" [ref=e841] [cursor=pointer]':
+        - generic [ref=e861]: Hynes
+      - 'button "Kenmore: Step-free" [ref=e862] [cursor=pointer]':
+        - generic [ref=e882]: Kenmore
+    - generic [ref=e909]: OUT
+  - main [ref=e1954]:
+    - button "Expand or collapse panel"
+    - generic [ref=e1955]:
+      - heading "Where to?" [level=1] [ref=e1956]
+      - generic [ref=e1957]: WORLD 1
+    - region "Where to?" [ref=e1959]:
+      - paragraph [ref=e2100]: PLANNING QUEST…
+  - button "Layers" [ref=e2082] [cursor=pointer]
+  - generic [aria-hidden] [ref=e2098]: Design 9 · Pixel Quest

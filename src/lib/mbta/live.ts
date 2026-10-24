@@ -16,6 +16,8 @@ export function predictionsPath(stopIds: string[]): string {
 }
 
 export const VEHICLES_PATH = `/vehicles?filter[route]=${SUBWAY_ROUTES.join(',')}&include=trip&fields[trip]=headsign`;
+/** Subway plus buses (route_type 3, Silver Line included) for the live map. */
+export const VEHICLES_WITH_BUSES_PATH = '/vehicles?filter[route_type]=0,1,3&include=trip&fields[trip]=headsign';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function relId(row: any, name: string): string | undefined {
@@ -95,15 +97,22 @@ export function latestVehicleUpdate(json: any): Date | null {
   return Number.isNaN(max) ? null : new Date(max);
 }
 
-/** `now` is the reference for `stale` (updated_at older than VEHICLE_STALE_MS). */
-export function normalizeVehicles(json: any, parentOf: ParentOf = identityParent, now: Date = new Date()): Vehicle[] {
+/** `now` is the reference for `stale` (updated_at older than VEHICLE_STALE_MS). Buses are kept only when `withBuses`. */
+export function normalizeVehicles(
+  json: any,
+  parentOf: ParentOf = identityParent,
+  now: Date = new Date(),
+  withBuses = false,
+): Vehicle[] {
   const { headsign, stopParent } = indexIncluded(json);
   const nowMs = now.getTime();
   const out: Vehicle[] = [];
   for (const row of Array.isArray(json?.data) ? json.data : []) {
     const a = row?.attributes ?? {};
     const routeId = relId(row, 'route');
-    if (!routeId || !SUBWAY.has(routeId)) continue;
+    if (!routeId) continue;
+    const bus = !SUBWAY.has(routeId);
+    if (bus && !withBuses) continue;
     const revenue = a.revenue ?? a.revenue_status;
     if (revenue === 'NON_REVENUE') continue;
     if (typeof a.latitude !== 'number' || typeof a.longitude !== 'number') continue;
@@ -112,6 +121,7 @@ export function normalizeVehicles(json: any, parentOf: ParentOf = identityParent
     const updatedMs = Date.parse(a.updated_at ?? '');
     out.push({
       id: String(row.id),
+      ...(bus ? { mode: 'bus' as const } : {}),
       routeId,
       directionId: dir(a.direction_id),
       lat: a.latitude,

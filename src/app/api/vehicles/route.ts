@@ -11,7 +11,7 @@ import {
   mbtaGet,
   normalizeVehicles,
   unavailable,
-  VEHICLES_PATH,
+  VEHICLES_WITH_BUSES_PATH,
 } from '@/lib/server/mbta';
 
 export async function GET(request: Request) {
@@ -19,10 +19,10 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const includeStale = url.searchParams.get('stale') === '1';
   try {
-    const r = await mbtaGet(VEHICLES_PATH, { ttlMs: 15_000, fallback: () => loadDemoVehicles(url.origin) });
+    const r = await mbtaGet(VEHICLES_WITH_BUSES_PATH, { ttlMs: 15_000, fallback: () => loadDemoVehicles(url.origin) });
     // A demo snapshot is judged against its own capture time, so it is not all stale.
     const now = (r.source === 'demo' && latestVehicleUpdate(r.body)) || new Date();
-    const all = normalizeVehicles(r.body, getParentOf(), now);
+    const all = normalizeVehicles(r.body, getParentOf(), now, true);
     return jsonWithCache(envelope(includeStale ? all : all.filter((v) => !v.stale), r), 15, 30);
   } catch {
     return unavailable('Vehicles');

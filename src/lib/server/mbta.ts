@@ -16,6 +16,7 @@ export {
   normalizeVehicles,
   predictionsPath,
   VEHICLES_PATH,
+  VEHICLES_WITH_BUSES_PATH,
   STOP_ID_RE,
   MAX_PREDICTION_STOPS,
 } from '@/lib/mbta/live';

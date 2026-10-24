@@ -1,0 +1,158 @@
+- generic [active] [ref=f2e1]:
+  - banner [ref=f2e2]:
+    - generic [ref=f2e3]: LastMile
+    - generic "Elevators out right now" [ref=f2e14]: 15 OUT
+  - img "Map of central Boston subway lines and step-free stations. Tap an empty spot to drop a pin." [ref=f2e28]:
+    - generic [ref=f2e30]:
+      - generic [ref=f2e36]: CHARLES RIVER
+      - generic [ref=f2e37]: HARBOR
+    - generic "Boston Common" [ref=f2e38]
+    - generic [aria-hidden]:
+      - generic: "41"
+      - generic: "33"
+      - generic: "29"
+      - generic: "26"
+      - generic: "22"
+    - generic [aria-hidden]:
+      - generic: B
+      - generic: B
+      - generic: B
+      - generic: B
+    - generic [ref=f2e70]:
+      - 'button "Alewife: Step-free" [ref=f2e71] [cursor=pointer]':
+        - generic [ref=f2e91]: Alewife
+      - 'button "Davis: Step-free" [ref=f2e92] [cursor=pointer]':
+        - generic [ref=f2e112]: Davis
+      - 'button "Porter: Step-free" [ref=f2e113] [cursor=pointer]':
+        - generic [ref=f2e133]: Porter
+      - 'button "Harvard: Step-free" [ref=f2e134] [cursor=pointer]':
+        - generic [ref=f2e154]: Harvard
+      - 'button "Central: Step-free" [ref=f2e155] [cursor=pointer]':
+        - generic [ref=f2e175]: Central
+      - 'button "Kendall/MIT: Step-free" [ref=f2e176] [cursor=pointer]':
+        - generic [ref=f2e196]: Kendall/MIT
+      - 'button "Charles/MGH: Step-free" [ref=f2e197] [cursor=pointer]':
+        - generic [ref=f2e217]: Charles/MGH
+      - 'button "Park Street: Partly step-free" [ref=f2e218] [cursor=pointer]':
+        - generic [ref=f2e236]: Park Street · partly
+      - 'button "Downtown Crossing: Partly step-free" [ref=f2e237] [cursor=pointer]':
+        - generic [ref=f2e255]: Downtown Crossing · partly
+      - 'button "South Station: Step-free" [ref=f2e256] [cursor=pointer]':
+        - generic [ref=f2e276]: South Station
+      - 'button "Broadway: Step-free" [ref=f2e277] [cursor=pointer]':
+        - generic [ref=f2e297]: Broadway
+      - 'button "Andrew: Step-free" [ref=f2e298] [cursor=pointer]':
+        - generic [ref=f2e318]: Andrew
+      - 'button "JFK/UMass: Step-free" [ref=f2e319] [cursor=pointer]':
+        - generic [ref=f2e339]: JFK/UMass
+      - 'button "North Station: Step-free" [ref=f2e340] [cursor=pointer]':
+        - generic [ref=f2e360]: North Station
+      - 'button "Haymarket: Step-free" [ref=f2e361] [cursor=pointer]':
+        - generic [ref=f2e381]: Haymarket
+      - 'button "State: Step-free" [ref=f2e382] [cursor=pointer]':
+        - generic [ref=f2e402]: State
+      - 'button "Chinatown: Step-free" [ref=f2e403] [cursor=pointer]':
+        - generic [ref=f2e423]: Chinatown
+      - 'button "Tufts Medical Center: Step-free" [ref=f2e424] [cursor=pointer]':
+        - generic [ref=f2e444]: Tufts Medical Center
+      - 'button "Back Bay: Step-free" [ref=f2e445] [cursor=pointer]':
+        - generic [ref=f2e465]: Back Bay
+      - 'button "Massachusetts Avenue: Step-free" [ref=f2e466] [cursor=pointer]':
+        - generic [ref=f2e486]: Massachusetts Avenue
+      - 'button "Ruggles: Step-free" [ref=f2e487] [cursor=pointer]':
+        - generic [ref=f2e507]: Ruggles
+      - 'button "Airport: Step-free" [ref=f2e508] [cursor=pointer]':
+        - generic [ref=f2e528]: Airport
+      - 'button "Maverick: Step-free" [ref=f2e529] [cursor=pointer]':
+        - generic [ref=f2e549]: Maverick
+      - 'button "Aquarium: Step-free" [ref=f2e550] [cursor=pointer]':
+        - generic [ref=f2e570]: Aquarium
+      - 'button "Government Center: Step-free" [ref=f2e571] [cursor=pointer]':
+        - generic [ref=f2e591]: Government Center
+      - 'button "Bowdoin: Not step-free" [ref=f2e592] [cursor=pointer]':
+        - generic [ref=f2e624]: Bowdoin · no step-free
+      - 'button "Lechmere: Step-free" [ref=f2e625] [cursor=pointer]':
+        - generic [ref=f2e645]: Lechmere
+      - 'button "Science Park/West End: Step-free" [ref=f2e646] [cursor=pointer]':
+        - generic [ref=f2e666]: Science Park/West End
+      - 'button "Boylston: Not step-free" [ref=f2e667] [cursor=pointer]':
+        - generic [ref=f2e699]: Boylston · no step-free
+      - 'button "Arlington: Step-free" [ref=f2e700] [cursor=pointer]':
+        - generic [ref=f2e720]: Arlington
+      - 'button "Copley: Step-free" [ref=f2e721] [cursor=pointer]':
+        - generic [ref=f2e741]: Copley
+      - 'button "Hynes: Step-free" [ref=f2e742] [cursor=pointer]':
+        - generic [ref=f2e762]: Hynes
+      - 'button "Kenmore: Step-free" [ref=f2e763] [cursor=pointer]':
+        - generic [ref=f2e783]: Kenmore
+    - generic [ref=f2e810]: OUT
+  - main [ref=f2e1855]:
+    - button "Expand or collapse panel" [ref=f2e1856] [cursor=pointer]
+    - generic [ref=f2e1858]:
+      - heading "Broken now" [level=1] [ref=f2e1859]
+      - generic [ref=f2e1860]: BOSS LIST
+    - region "Broken now" [ref=f2e1862]:
+      - generic [ref=f2e1863]:
+        - generic [ref=f2e1864]:
+          - generic [ref=f2e1865]: "3"
+          - generic [ref=f2e1866]: elevators out
+        - generic [ref=f2e1867]:
+          - generic [ref=f2e1868]: "4"
+          - generic [ref=f2e1869]: escalators out
+        - generic [ref=f2e1870]:
+          - generic [ref=f2e1871]: "0"
+          - generic [ref=f2e1872]: lifts out
+      - paragraph [ref=f2e1873]: Updated 2 min ago · MBTA alerts
+      - group "Filter by line" [ref=f2e1889]:
+        - button "All lines" [pressed] [ref=f2e1890] [cursor=pointer]
+        - button "Red" [ref=f2e1891] [cursor=pointer]
+        - button "Orange" [ref=f2e1893] [cursor=pointer]
+        - button "Blue" [ref=f2e1895] [cursor=pointer]
+        - button "Green" [ref=f2e1897] [cursor=pointer]
+      - generic [ref=f2e1900] [cursor=pointer]:
+        - generic [ref=f2e1901]: Include escalators
+        - switch "Include escalators" [ref=f2e1911]
+      - generic [ref=f2e1912]:
+        - paragraph [ref=f2e1913]: 7 SHOWN
+        - 'button "Elevator out Downtown Crossing: the Orange Line platform elevator (804) is out. Use State instead." [ref=f2e1914] [cursor=pointer]':
+          - generic [ref=f2e1931]:
+            - generic [ref=f2e1932]: Elevator out
+            - generic [ref=f2e1950]: "Downtown Crossing: the Orange Line platform elevator (804) is out. Use State instead."
+        - 'button "Elevator out Park Street: the Winter St concourse elevator (978) is out. Use the Tremont St door." [ref=f2e1959] [cursor=pointer]':
+          - generic [ref=f2e1976]:
+            - generic [ref=f2e1977]: Elevator out
+            - generic [ref=f2e1996]: "Park Street: the Winter St concourse elevator (978) is out. Use the Tremont St door."
+        - 'button "Elevator out Back Bay: the Dartmouth St street elevator is out. Use the Clarendon St door." [ref=f2e2005] [cursor=pointer]':
+          - generic [ref=f2e2022]:
+            - generic [ref=f2e2023]: Elevator out
+            - generic [ref=f2e2041]: "Back Bay: the Dartmouth St street elevator is out. Use the Clarendon St door."
+        - 'button "Elevator out Kenmore: the outbound platform elevator is out. Ride on to Hynes, then roll 6 min." [ref=f2e2050] [cursor=pointer]':
+          - generic [ref=f2e2067]:
+            - generic [ref=f2e2068]: Elevator out
+            - generic [ref=f2e2086]: "Kenmore: the outbound platform elevator is out. Ride on to Hynes, then roll 6 min."
+        - 'button "Elevator out Maverick: the busway elevator is out. The Sumner St door still works." [ref=f2e2095] [cursor=pointer]':
+          - generic [ref=f2e2112]:
+            - generic [ref=f2e2113]: Elevator out
+            - generic [ref=f2e2131]: "Maverick: the busway elevator is out. The Sumner St door still works."
+        - 'button "Elevator out JFK/UMass: the Ashmont platform elevator is out. Ride one stop to Andrew and come back." [ref=f2e2140] [cursor=pointer]':
+          - generic [ref=f2e2157]:
+            - generic [ref=f2e2158]: Elevator out
+            - generic [ref=f2e2176]: "JFK/UMass: the Ashmont platform elevator is out. Ride one stop to Andrew and come back."
+        - 'button "Lift out Copley: the outbound wheelchair lift is out. Board at Arlington instead." [ref=f2e2185] [cursor=pointer]':
+          - generic [ref=f2e2202]:
+            - generic [ref=f2e2203]: Lift out
+            - generic [ref=f2e2221]: "Copley: the outbound wheelchair lift is out. Board at Arlington instead."
+  - navigation "Pages" [ref=f2e2230]:
+    - link "Trip" [ref=f2e2231] [cursor=pointer]:
+      - /url: "#trip"
+    - link "Broken now" [ref=f2e2242] [cursor=pointer]:
+      - /url: "#broken"
+    - link "Station" [ref=f2e2259] [cursor=pointer]:
+      - /url: "#station"
+    - link "Street safety" [ref=f2e2279] [cursor=pointer]:
+      - /url: "#safety"
+    - link "My stations" [ref=f2e2298] [cursor=pointer]:
+      - /url: "#mine"
+    - link "More" [ref=f2e2310] [cursor=pointer]:
+      - /url: "#more"
+  - button "Layers" [ref=f2e2327] [cursor=pointer]

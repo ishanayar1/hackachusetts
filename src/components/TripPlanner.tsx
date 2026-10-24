@@ -5,7 +5,7 @@ import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } fro
 import type { DataSource } from '@/lib/mbta/types';
 import type { Leg, RideLeg, RouteFailReason, RouteOk } from '@/lib/router';
 import type { Station, StationStatusRow } from '@/lib/ui/api';
-import { cleanEntranceId, facilityTypeWord, legRoutesText, routeName, stepFreeState } from '@/lib/ui/format';
+import { cleanEntranceId, facilityTypeWord, legRoutesText, ROUTE_COLORS, routeName, stepFreeState } from '@/lib/ui/format';
 import { useFacilities, usePlatformNames, useRoute, useWalk, type RouteQuery } from '@/lib/ui/hooks';
 import {
   DEMO_DESTINATIONS,
@@ -21,7 +21,24 @@ import {
   type WalkResult,
 } from '@/lib/ui/walk';
 import BluebikesBox from './BluebikesBox';
-import { btn, btnPrimary, Notice, SourceBadge } from './ui';
+import {
+  badge,
+  badgeOk,
+  badgeWarn,
+  btn,
+  btnGhost,
+  btnPrimary,
+  card,
+  chip,
+  input,
+  listItem,
+  mutedText,
+  Notice,
+  pageTitle,
+  sectionTitle,
+  SourceBadge,
+  statNumber,
+} from './ui';
 import WeatherBox from './WeatherBox';
 import { useT } from '@/lib/i18n';
 
@@ -69,6 +86,64 @@ const END_CHOICES: [EndMode, string][] = [
 ];
 
 const mins = (m: number) => Math.max(1, Math.round(m));
+
+/* Local class strings built on the shared ui.tsx tokens. */
+const labelCls = 'block text-[14px] font-bold text-ink';
+const selectCls = `${input} mt-1.5 cursor-pointer`;
+/** "Where to?" field: the destination select, a little larger and bolder. */
+const whereCls = `${input} mt-1.5 min-h-14 cursor-pointer rounded-[18px] text-[17px] font-bold`;
+/** A radio label drawn as a chip; the checked radio turns it dark like chip's aria-pressed state. */
+const choiceChip = `${chip} cursor-pointer has-[:checked]:border-ink has-[:checked]:bg-ink has-[:checked]:text-white has-[:focus-visible]:ring-4 has-[:focus-visible]:ring-t-blue/30`;
+const liveNote = 'mt-2 text-[13px] font-medium leading-snug text-ink-2';
+/** Full-width tappable row that may wrap to two lines. */
+const rowBtn =
+  'flex min-h-11 w-full items-center gap-3 rounded-[18px] border border-line bg-white px-3.5 py-2.5 text-left text-[14px] font-bold text-ink shadow-sh1 transition duration-200 hover:-translate-y-px hover:shadow-sh2 active:scale-[.97]';
+const linkBtn = 'min-h-11 font-bold text-t-blue underline underline-offset-2 hover:text-ink';
+
+/** Loading placeholder: shimmer blocks (decorative; the text beside it is what is announced). */
+function Shimmer({ rows = 2 }: { rows?: number }) {
+  return (
+    <div aria-hidden="true" className="mt-2 space-y-2">
+      <div className="lm-shimmer h-16 rounded-[18px]" />
+      {Array.from({ length: rows - 1 }, (_, i) => (
+        <div key={i} className="lm-shimmer h-10 rounded-[18px]" />
+      ))}
+    </div>
+  );
+}
+
+/** One stop of the vertical trip timeline: a 30px colored circle with a 2px connector to the next one. */
+function TimelineStep({
+  color,
+  glyph,
+  last,
+  children,
+}: {
+  color: string;
+  glyph: React.ReactNode;
+  last?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <li className={`relative flex gap-3 ${last ? '' : 'pb-4'}`}>
+      {!last && <span aria-hidden="true" className="absolute bottom-0.5 left-[14px] top-[34px] w-0.5 rounded-full bg-line" />}
+      <span
+        aria-hidden="true"
+        className="relative z-[1] grid size-[30px] shrink-0 place-items-center rounded-full text-[12px] font-extrabold text-white shadow-sh1 [&_svg]:size-4"
+        style={{ background: color }}
+      >
+        {glyph}
+      </span>
+      <div className="min-w-0 flex-1 pt-1">{children}</div>
+    </li>
+  );
+}
+
+const DoorIcon = ({ out }: { out?: boolean }) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+    {out ? <path d="M14 6l6 6-6 6M20 12H8M4 4v16" /> : <path d="M10 6l6 6-6 6M16 12H4M20 4v16" />}
+  </svg>
+);
 
 /** What a spot tapped on the map is used for. 'from-me' = the end, starting from the rider's location. */
 export type MapPickUse = 'start' | 'end' | 'from-me';
@@ -391,6 +466,26 @@ export default function TripPlanner({
   useImperativeHandle(ref, () => ({ pick: (p, use) => void pick(p, use), clear }));
   const hasTrip = !!query || !!direct;
 
+  // Quick pick (mockup "Where to?" list): one tap plans a trip. Keeps a start you already chose, else Park Street.
+  const keepStart = startMode === 'station' ? !!from : !!place;
+  const startName = keepStart
+    ? (place?.label ?? stations.find((s) => s.id === from)?.name ?? '')
+    : DEMO_PLACE.label;
+  const quickTrip = (p: Place) => {
+    const start: Pick<Form, 'startMode' | 'place' | 'from'> = keepStart
+      ? { startMode, place, from }
+      : { startMode: 'demo', place: DEMO_PLACE, from: nearestStepFree(DEMO_PLACE, stations, live)?.id ?? '' };
+    const f: Form = { ...start, endMode: 'place', destPlace: p, to: nearestStepFree(p, stations, live)?.id ?? '' };
+    setStartMode(f.startMode);
+    setPlace(f.place);
+    setFrom(f.from);
+    setEndMode('place');
+    setDestPlace(p);
+    setTo(f.to);
+    plan(f);
+  };
+  const quickPlaces = [...places, ...DEMO_DESTINATIONS].slice(0, 5);
+
   const options = stations.map((s) => (
     <option key={s.id} value={s.id}>
       {s.name} — {MARK[stepFreeState(s, live.get(s.id))][0]} {t(MARK[stepFreeState(s, live.get(s.id))][1])}
@@ -398,29 +493,43 @@ export default function TripPlanner({
   ));
 
   const formEl = (
-    <form onSubmit={submit} className="mt-2 space-y-3">
+    <form onSubmit={submit} className="mt-3 space-y-4">
       <fieldset>
-        <legend className="text-sm font-semibold text-slate-900">{t('Start from')}</legend>
-        <div className="mt-1">
+        <legend className={labelCls}>{t('Start from')}</legend>
+        <div className="mt-2 flex flex-wrap gap-2">
           {START_CHOICES.filter(([m]) => m !== 'saved' || places.length > 0).map(([m, label]) => (
-            <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
+            <label key={m} className={choiceChip}>
               <input
                 type="radio"
                 name={`${ids}-start`}
                 value={m}
                 checked={startMode === m}
                 onChange={() => chooseStart(m)}
-                className="h-5 w-5"
+                className="sr-only"
               />
               {t(label)}
             </label>
           ))}
         </div>
         {startMode === 'saved' && (
-          <div className="mt-1">
-            <label htmlFor={`${ids}-saved`} className="block text-sm font-semibold text-slate-900">
+          <div className="mt-3">
+            <label htmlFor={`${ids}-saved`} className={labelCls}>
               {t('Start at')}
             </label>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {places.map((p) => (
+                <button
+                  key={p.label}
+                  type="button"
+                  className={chip}
+                  aria-pressed={place?.label === p.label}
+                  onClick={() => setStartPlace(p)}
+                >
+                  <span aria-hidden="true" className="size-2.5 rounded-full bg-t-blue" />
+                  {p.label}
+                </button>
+              ))}
+            </div>
             <select
               id={`${ids}-saved`}
               value={place?.label ?? ''}
@@ -429,7 +538,7 @@ export default function TripPlanner({
                 if (p) setStartPlace(p);
                 else setPlace(null);
               }}
-              className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
+              className={selectCls}
             >
               <option value="">{t('Choose a place')}</option>
               {places.map((p) => (
@@ -440,8 +549,13 @@ export default function TripPlanner({
             </select>
           </div>
         )}
-        <div aria-live="polite" className="text-sm text-slate-800">
-          {startMode === 'here' && locating && <p>{t('Finding your location…')}</p>}
+        <div aria-live="polite" className={liveNote}>
+          {startMode === 'here' && locating && (
+            <>
+              <p>{t('Finding your location…')}</p>
+              <div aria-hidden="true" className="lm-shimmer mt-2 h-11 rounded-2xl" />
+            </>
+          )}
           {startMode === 'map' && !place && <p>{t('Tap a spot on the map, then choose Start here.')}</p>}
           {startMode === 'map' && place && (
             <p>
@@ -460,7 +574,7 @@ export default function TripPlanner({
           )}
         </div>
         {locError && (
-          <div className="mt-1 space-y-1">
+          <div className="mt-2 space-y-2">
             <Notice tone="error">{locError}</Notice>
             <button type="button" className={btn} onClick={() => void locate()}>
               {t('Try my location again')}
@@ -469,53 +583,70 @@ export default function TripPlanner({
         )}
       </fieldset>
       <div>
-        <label htmlFor={`${ids}-from`} className="block text-sm font-semibold text-slate-900">
+        <label htmlFor={`${ids}-from`} className={`${labelCls} flex items-center gap-2.5`}>
+          <span aria-hidden="true" className="size-3.5 shrink-0 rounded-full bg-t-blue shadow-[0_0_0_4px_rgba(0,61,165,.18)]" />
           {t(startMode === 'station' ? 'From station' : 'Walk to station (where you board)')}
         </label>
         <select
           id={`${ids}-from`}
           value={from}
           onChange={(e) => setFrom(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
+          className={selectCls}
         >
           <option value="">{t('Choose a station')}</option>
           {options}
         </select>
       </div>
       <fieldset>
-        <legend className="text-sm font-semibold text-slate-900">{t('Destination')}</legend>
-        <div className="mt-1">
+        <legend className={labelCls}>{t('Destination')}</legend>
+        <div className="mt-2 flex flex-wrap gap-2">
           {END_CHOICES.map(([m, label]) => (
-            <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
+            <label key={m} className={choiceChip}>
               <input
                 type="radio"
                 name={`${ids}-end`}
                 value={m}
                 checked={endMode === m}
                 onChange={() => chooseEnd(m)}
-                className="h-5 w-5"
+                className="sr-only"
               />
               {t(label)}
             </label>
           ))}
         </div>
         {endMode === 'map' && (
-          <p aria-live="polite" className="mt-1 text-sm text-slate-800">
+          <p aria-live="polite" className={liveNote}>
             {destPlace
               ? t('We picked the closest step-free station to {place}; you can change it below.', { place: destPlace.label })
               : t('Tap a spot on the map, then choose End here.')}
           </p>
         )}
         {endMode === 'place' && (
-          <div>
-            <label htmlFor={`${ids}-place`} className="block text-sm font-semibold text-slate-900">
+          <div className="mt-3">
+            <label htmlFor={`${ids}-place`} className={labelCls}>
               {t('Place')}
             </label>
+            {places.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {places.map((p) => (
+                  <button
+                    key={p.label}
+                    type="button"
+                    className={chip}
+                    aria-pressed={destPlace?.label === p.label}
+                    onClick={() => chooseDestPlace(p.label)}
+                  >
+                    <span aria-hidden="true" className="size-2.5 rounded-full bg-t-red" />
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <select
               id={`${ids}-place`}
               value={destPlace?.label ?? ''}
               onChange={(e) => chooseDestPlace(e.target.value)}
-              className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
+              className={selectCls}
             >
               <option value="">{t('Choose a place')}</option>
               {places.length > 0 && (
@@ -536,7 +667,7 @@ export default function TripPlanner({
               </optgroup>
             </select>
             {destPlace && (
-              <p aria-live="polite" className="mt-1 text-sm text-slate-800">
+              <p aria-live="polite" className={liveNote}>
                 {t('We picked the closest step-free station to {place}; you can change it below.', { place: destPlace.label })}
               </p>
             )}
@@ -544,20 +675,25 @@ export default function TripPlanner({
         )}
       </fieldset>
       <div>
-        <label htmlFor={`${ids}-to`} className="block text-sm font-semibold text-slate-900">
+        <label htmlFor={`${ids}-to`} className={`${labelCls} flex items-center gap-2.5`}>
+          <span aria-hidden="true" className="size-3.5 shrink-0 rounded-[4px] bg-ink" />
           {t(endMode === 'station' ? 'To station' : 'Leave the train at (station)')}
         </label>
         <select
           id={`${ids}-to`}
           value={to}
           onChange={(e) => setTo(e.target.value)}
-          className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
+          className={whereCls}
         >
           <option value="">{t('Choose a station')}</option>
           {options}
         </select>
       </div>
-      <button type="submit" className={`${btnPrimary} w-full`}>
+      <button type="submit" className={`${btnPrimary} min-h-12 w-full`}>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+          <circle cx="11" cy="11" r="6.5" />
+          <path d="M16 16l4 4" />
+        </svg>
         {t('Find step-free route')}
       </button>
       {formError && <Notice tone="error">{formError}</Notice>}
@@ -566,28 +702,39 @@ export default function TripPlanner({
 
   return (
     <section aria-labelledby="trip-h">
-      <h2 id="trip-h" ref={headingRef} tabIndex={-1} className="text-lg font-bold text-slate-900 outline-none">
+      <h2 id="trip-h" ref={headingRef} tabIndex={-1} className={`${pageTitle} outline-none`}>
         {t('Plan a step-free trip')}
       </h2>
       {hasTrip && (
-        <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="mt-3 grid grid-cols-2 gap-2">
           <button type="button" className={btnPrimary} disabled={!steps?.length} onClick={onStart}>
-            <span aria-hidden="true">▶</span> {t('Start')}
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M8 5.5v13a1 1 0 0 0 1.5.86l10.4-6.5a1 1 0 0 0 0-1.72L9.5 4.64A1 1 0 0 0 8 5.5z" />
+            </svg>
+            {t('Start')}
           </button>
-          <button type="button" className={btn} onClick={clear}>
-            <span aria-hidden="true">✕</span> {t('Close trip')}
+          <button type="button" className={btnGhost} onClick={clear}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round">
+              <path d="M6 6l12 12M18 6L6 18" />
+            </svg>
+            {t('Close trip')}
           </button>
         </div>
       )}
 
       <div aria-live="polite" className="mt-3">
-        {query && (isLoading || isValidating) && <p className="text-sm text-slate-800">{t('Planning your trip…')}</p>}
+        {query && (isLoading || isValidating) && (
+          <>
+            <p className={mutedText}>{t('Planning your trip…')}</p>
+            {isLoading && <Shimmer rows={3} />}
+          </>
+        )}
         {query && error && <Notice tone="error">{t('Route planning is not available right now. Try again in a minute.')}</Notice>}
       </div>
 
       {direct && (
         <>
-          <p className="mt-3 text-sm text-slate-800">{t('Both places use the same station, so this trip is a walk.')}</p>
+          <p className={liveNote}>{t('Both places use the same station, so this trip is a walk.')}</p>
           <WalkDetails
             id="walk-only-h"
             heading={t('Walk there')}
@@ -639,8 +786,8 @@ export default function TripPlanner({
       )}
 
       {query && ok && !walkPlace && byId.get(query.from) && (
-        <section aria-labelledby="start-h" className="mt-3 rounded-md border border-slate-500 bg-white p-3 text-slate-900">
-          <h3 id="start-h" className="font-bold">
+        <section aria-labelledby="start-h" className={`${card} lm-in mt-3 text-ink`}>
+          <h3 id="start-h" className={sectionTitle}>
             {t('At {station}', { station: nameOf(query.from) })}
           </h3>
           <WeatherBox
@@ -655,11 +802,11 @@ export default function TripPlanner({
       )}
 
       {query && route && !route.ok && (
-        <div className="mt-2 space-y-2">
+        <div className="lm-in mt-3 space-y-2">
           <Notice tone="error">{t(FAIL_TEXT[route.reason], { o: nameOf(query.from), d: nameOf(query.to) })}</Notice>
           {route.alternatives.length > 0 && (
             <>
-              <p className="text-sm font-semibold text-slate-900">{t('Nearby stations that are step-free now:')}</p>
+              <p className={`${labelCls} pt-1`}>{t('Nearby stations that are step-free now:')}</p>
               <ul className="space-y-2">
                 {route.alternatives.map((a) => {
                   const useAsOrigin = route.reason === 'origin-not-step-free';
@@ -667,7 +814,7 @@ export default function TripPlanner({
                     <li key={a.stationId}>
                       <button
                         type="button"
-                        className={`${btn} w-full justify-start text-left`}
+                        className={rowBtn}
                         onClick={() => {
                           const next = useAsOrigin
                             ? { ...query, from: a.stationId }
@@ -677,10 +824,13 @@ export default function TripPlanner({
                           setQuery(next);
                         }}
                       >
-                        {t(useAsOrigin ? 'Start from {name} instead ({km} km away)' : 'Go to {name} instead ({km} km away)', {
-                          name: nameOf(a.stationId),
-                          km: a.distanceKm,
-                        })}
+                        <span aria-hidden="true" className="size-3 shrink-0 rounded-full bg-ok shadow-[0_0_0_3px_var(--ok-bg)]" />
+                        <span className="min-w-0 flex-1">
+                          {t(useAsOrigin ? 'Start from {name} instead ({km} km away)' : 'Go to {name} instead ({km} km away)', {
+                            name: nameOf(a.stationId),
+                            km: a.distanceKm,
+                          })}
+                        </span>
                       </button>
                     </li>
                   );
@@ -689,7 +839,7 @@ export default function TripPlanner({
             </>
           )}
           {query.closed.length > 0 && (
-            <button type="button" className={btn} onClick={() => setQuery({ ...query, closed: [] })}>
+            <button type="button" className={btnGhost} onClick={() => setQuery({ ...query, closed: [] })}>
               {t('Reset pretend-broken elevators')}
             </button>
           )}
@@ -740,16 +890,59 @@ export default function TripPlanner({
         />
       )}
 
-      {hasTrip ? (
+      {!hasTrip && quickPlaces.length > 0 && (
+        <div className="lm-in mt-3 space-y-2">
+          <p className="flex items-center gap-2.5 px-1 text-[14px] font-bold text-ink-2">
+            <span aria-hidden="true" className="size-3 shrink-0 rounded-full bg-t-blue shadow-[0_0_0_4px_rgba(0,61,165,0.18)]" />
+            {t('From {place}', { place: startName })}
+          </p>
+          <ul className="space-y-1.5">
+            {quickPlaces.map((p) => (
+              <li key={p.label}>
+                <button type="button" onClick={() => quickTrip(p)} className={`${listItem} items-center`}>
+                  <span aria-hidden="true" className="grid size-10 shrink-0 place-items-center rounded-xl bg-soft-2 text-ink">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z" />
+                      <circle cx="12" cy="9.5" r="2.5" />
+                    </svg>
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[15px] font-bold text-ink">{p.label}</span>
+                    <span className={mutedText}>{t('Plan a step-free trip')}</span>
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {hasTrip || quickPlaces.length > 0 ? (
         <details
-          open={editOpen}
+          open={editOpen || (!hasTrip && !!formError)}
           onToggle={(e) => setEditOpen(e.currentTarget.open)}
-          className="mt-3 rounded-md border border-slate-400 bg-white px-3 py-1"
+          className="group mt-3 rounded-card border border-line bg-white shadow-sh1 transition duration-200 open:shadow-sh2"
         >
-          <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold text-slate-900">
-            {t('Change start or destination')}
+          <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 rounded-card px-4 text-[15px] font-bold text-ink outline-none transition hover:bg-soft focus-visible:ring-4 focus-visible:ring-t-blue/30 [&::-webkit-details-marker]:hidden">
+            <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-full bg-soft text-ink-2 [&_svg]:size-4">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M7 4v13M7 17l-3-3M7 17l3-3M17 20V7M17 7l-3 3M17 7l3 3" />
+              </svg>
+            </span>
+            <span className="flex-1">{t('Change start or destination')}</span>
+            <svg
+              aria-hidden="true"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-[18px] shrink-0 text-muted transition-transform duration-200 group-open:rotate-180"
+            >
+              <path d="M6 9l6 6 6-6" />
+            </svg>
           </summary>
-          {formEl}
+          <div className="border-t border-line px-4 pb-4">{formEl}</div>
         </details>
       ) : (
         formEl
@@ -792,40 +985,65 @@ function WalkDetails({
   const t = useT();
   const warnings = warningLines(walk?.warnings).map((w) => t(w));
   return (
-    <section aria-labelledby={id} className="mt-3 rounded-md border border-slate-500 bg-white p-3 text-slate-900">
-      <h3 id={id} className="font-bold">
+    <section aria-labelledby={id} className={`${card} lm-in mt-3 text-ink`}>
+      <h3 id={id} className={`${sectionTitle} flex items-center gap-2.5`}>
+        <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-xl bg-soft text-ink [&_svg]:size-5">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="13" cy="4.5" r="1.8" />
+            <path d="M10 21l2-6 3 3v3M12 15l-1-5 4-1 2 4 2 1M11 10l-3 2-1 3" />
+          </svg>
+        </span>
         {heading}
       </h3>
       <div aria-live="polite">
-        {loading && !walk && <p className="text-sm">{t('Finding a walking route…')}</p>}
-        {failed && <Notice tone="error">{failText}</Notice>}
+        {loading && !walk && (
+          <>
+            <p className={`${mutedText} mt-2`}>{t('Finding a walking route…')}</p>
+            <Shimmer rows={2} />
+          </>
+        )}
+        {failed && (
+          <div className="mt-2">
+            <Notice tone="error">{failText}</Notice>
+          </div>
+        )}
       </div>
       {walk && (
         <>
-          <p className="mt-1">
+          <div className="mt-3 flex items-baseline gap-2">
+            <span aria-hidden="true" className={statNumber}>
+              {mins(walk.minutes)}
+            </span>
+            <span aria-hidden="true" className="text-[15px] font-bold text-muted">
+              {t('min')} · {formatDistance(walk.distanceM)}
+            </span>
+          </div>
+          <p className="mt-2 text-[15px] leading-snug text-ink-2">
             {t('From {from} to {to}:', { from: fromText, to: toText })}{' '}
-            <strong>{t('about {n} min', { n: mins(walk.minutes) })}</strong> ({formatDistance(walk.distanceM)}).
+            <strong className="text-ink">{t('about {n} min', { n: mins(walk.minutes) })}</strong> ({formatDistance(walk.distanceM)}).
           </p>
-          {centreNote && <p className="text-sm text-slate-800">{centreNote}</p>}
-          <p className="text-sm text-slate-800">
-            <span aria-hidden="true">{walk.source === 'valhalla' ? '♿ ' : '⚠ '}</span>
+          {centreNote && <p className={`${mutedText} mt-1`}>{centreNote}</p>}
+          <p className={`${mutedText} mt-1`}>
+            <span aria-hidden="true" className={walk.source === 'valhalla' ? 'text-ok' : 'text-warn'}>
+              {walk.source === 'valhalla' ? '♿ ' : '⚠ '}
+            </span>
             {t(WALK_SOURCE_LABEL[walk.source] ?? walk.source)}
             {walk.approximate && walk.source === 'valhalla' ? `, ${t('approximate')}` : ''}. {t('Shown as a dashed line on the map.')}
           </p>
           {walk.source === 'straight' && (
-            <p className="text-sm text-slate-800">
+            <p className="mt-2 rounded-2xl bg-warn-bg px-3.5 py-2.5 text-[13px] font-semibold text-warn">
               {t('This is a straight line, not a street route. Check curbs and crossings on the way.')}
             </p>
           )}
           <SourceBadge source={source} fetchedAt={fetchedAt} />
           {walk.steps.length > 0 && (
             <>
-              <h4 className="mt-2 text-sm font-semibold">{t('Turn by turn')}</h4>
-              <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm">
+              <h4 className="mt-4 text-[14px] font-bold text-ink">{t('Turn by turn')}</h4>
+              <ol className="mt-1.5 list-decimal space-y-1.5 pl-5 text-[14px] leading-snug text-ink-2 marker:font-bold marker:text-muted">
                 {walk.steps.map((st, i) => (
                   <li key={i}>
                     {st.instruction}
-                    {st.distanceM >= 5 && <span className="text-slate-700"> ({formatDistance(st.distanceM)})</span>}
+                    {st.distanceM >= 5 && <span className="text-muted"> ({formatDistance(st.distanceM)})</span>}
                   </li>
                 ))}
               </ol>
@@ -833,24 +1051,24 @@ function WalkDetails({
           )}
           {walk.warnings && (
             <>
-              <h4 className="mt-2 text-sm font-semibold">{t('Along this walk')}</h4>
+              <h4 className="mt-4 text-[14px] font-bold text-ink">{t('Along this walk')}</h4>
               {warnings.length === 0 ? (
-                <p className="text-sm text-slate-800">
+                <p className={`${mutedText} mt-1`}>
                   {t(
                     'No recorded crash areas, recorded fatal crashes, resident reports, open 311 hazards or poor curb ramps near this route in our data. The data can be incomplete.',
                   )}
                 </p>
               ) : (
-                <ul className="mt-1 space-y-1 text-sm">
+                <ul className="mt-1.5 space-y-1.5 text-[14px] leading-snug text-ink-2">
                   {warnings.map((w, i) => (
-                    <li key={i} className="flex items-start gap-1.5">
-                      <span aria-hidden="true">⚠</span>
+                    <li key={i} className="flex items-start gap-2 rounded-2xl bg-warn-bg px-3 py-2">
+                      <span aria-hidden="true" className="font-bold text-warn">⚠</span>
                       <span>{w}</span>
                     </li>
                   ))}
                 </ul>
               )}
-              <p className="mt-1 text-xs text-slate-700">
+              <p className="mt-1.5 text-[12px] font-medium leading-snug text-muted">
                 {t(
                   'Crash counts are historical recorded crashes (911 dispatches), not live. Fatal crashes and resident reports come from Boston Vision Zero.',
                 )}
@@ -947,14 +1165,34 @@ function RouteDetails({
   const demoClosed = query.closed;
 
   return (
-    <div className="mt-3 space-y-3">
-      <div className="rounded-md border border-emerald-800 bg-emerald-50 p-3 text-slate-900">
-        <p className="font-bold">
-          <span aria-hidden="true">✓ </span>
+    <div className="lm-in mt-3 space-y-3">
+      <div className={card}>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p aria-hidden="true" className="flex items-baseline gap-1.5">
+            <span className={statNumber}>{mins(route.minutes)}</span>
+            <span className="text-[15px] font-bold text-muted">{tr('min')}</span>
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            <span className={`${badge} ${badgeOk}`}>
+              <span aria-hidden="true">✓</span>
+              {tr('step-free now')}
+            </span>
+            {route.approximate && (
+              <span className={`${badge} ${badgeWarn}`}>
+                <span aria-hidden="true">!</span>
+                {tr('approximate')}
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="mt-3 text-[15px] font-bold leading-snug text-ink">
+          <span aria-hidden="true" className="text-ok">
+            ✓{' '}
+          </span>
           {tr('Step-free route found: about {n} min', { n: mins(route.minutes) })}
           {totalWait > 0 && ` ${tr('(including about {n} min waiting)', { n: mins(totalWait) })}`}
         </p>
-        <p className="text-sm">
+        <p className={`${mutedText} mt-1 leading-snug`}>
           {route.transfers === 0
             ? tr('No changes.')
             : en
@@ -964,59 +1202,72 @@ function RouteDetails({
           {totalWait > 0 ? ` ${tr('(waits are half the usual time between trains)')}` : ''}.
         </p>
         {route.approximate && (
-          <p className="mt-1 text-sm">
+          <p className="mt-2 rounded-2xl bg-warn-bg px-3.5 py-2.5 text-[13px] font-semibold leading-snug text-warn">
             {tr("Some stations on this trip have no detailed elevator map, so we used the MBTA's station accessibility flag there.")}
           </p>
         )}
         <SourceBadge source={source} fetchedAt={fetchedAt} />
       </div>
 
-      <ol className="space-y-2 text-sm text-slate-900">
-        <li className="rounded border border-slate-300 bg-white p-2">
-          <strong>{tr('Enter by:')}</strong> {doorName(route.originEntranceId, route.originEntranceName ?? route.originEntrance?.name, 'entrance')} {tr('at')}{' '}
-          <button
-            type="button"
-            className="min-h-11 font-semibold text-blue-800 underline"
-            onClick={() => onSelectStation(query.from)}
-          >
-            {nameOf(query.from)}
-          </button>
-        </li>
-        {route.legs.map((leg, i) => (
-          <li key={i} className="rounded border border-slate-300 bg-white p-2">
-            {legText(leg)}
-          </li>
-        ))}
-        <li className="rounded border border-slate-300 bg-white p-2">
-          <strong>{tr('Exit by:')}</strong> {doorName(route.destinationExitId, route.destinationExitName ?? route.destinationExit?.name, 'exit')} {tr('at')}{' '}
-          <button
-            type="button"
-            className="min-h-11 font-semibold text-blue-800 underline"
-            onClick={() => onSelectStation(query.to)}
-          >
-            {nameOf(query.to)}
-          </button>
-        </li>
+      <ol className={card}>
+        <TimelineStep color="var(--ink)" glyph={<DoorIcon />}>
+          <p className="text-[15px] font-bold leading-snug text-ink">{tr('Enter by:')}</p>
+          <p className={`${mutedText} leading-snug`}>
+            {doorName(route.originEntranceId, route.originEntranceName ?? route.originEntrance?.name, 'entrance')} {tr('at')}{' '}
+            <button type="button" className={linkBtn} onClick={() => onSelectStation(query.from)}>
+              {nameOf(query.from)}
+            </button>
+          </p>
+        </TimelineStep>
+        {route.legs.map((leg, i) => {
+          const ride = leg.kind === 'ride';
+          const color = ride ? (ROUTE_COLORS[leg.route] ?? 'var(--ink-2)') : 'var(--muted)';
+          const glyph = ride ? (
+            leg.route.startsWith('Green-') ? leg.route.slice(6) : leg.route.charAt(0)
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M7 4L3 8l4 4M3 8h14M17 20l4-4-4-4M21 16H7" />
+            </svg>
+          );
+          const title = ride
+            ? [...new Set([leg.route, ...((leg as RideLegPlus).alsoRoutes ?? [])])].map((r) => tr(routeName(r))).join(' / ')
+            : nameOf(leg.stationId);
+          return (
+            <TimelineStep key={i} color={color} glyph={glyph}>
+              <p className="text-[15px] font-bold leading-snug text-ink">{title}</p>
+              <p className={`${mutedText} leading-snug`}>{legText(leg)}</p>
+            </TimelineStep>
+          );
+        })}
+        <TimelineStep color="var(--ok)" glyph={<DoorIcon out />} last>
+          <p className="text-[15px] font-bold leading-snug text-ink">{tr('Exit by:')}</p>
+          <p className={`${mutedText} leading-snug`}>
+            {doorName(route.destinationExitId, route.destinationExitName ?? route.destinationExit?.name, 'exit')} {tr('at')}{' '}
+            <button type="button" className={linkBtn} onClick={() => onSelectStation(query.to)}>
+              {nameOf(query.to)}
+            </button>
+          </p>
+        </TimelineStep>
       </ol>
 
-      <section aria-labelledby="demo-h" className="rounded-md border-2 border-dashed border-slate-500 p-3">
-        <h3 id="demo-h" className="font-bold text-slate-900">
+      <section aria-labelledby="demo-h" className="rounded-card border-2 border-dashed border-line-2 bg-soft p-4">
+        <h3 id="demo-h" className={sectionTitle}>
           {tr('Demo: break an elevator')}
         </h3>
-        <p className="text-sm text-slate-800">{tr('Elevators and ramps this route needs:')}</p>
+        <p className={`${mutedText} mt-0.5`}>{tr('Elevators and ramps this route needs:')}</p>
         {route.usedFacilityIds.length === 0 ? (
-          <p className="mt-1 text-sm text-slate-800">{tr('None listed for this route (no detailed data, or level access).')}</p>
+          <p className={`${mutedText} mt-2`}>{tr('None listed for this route (no detailed data, or level access).')}</p>
         ) : (
-          <ul className="mt-2 space-y-2">
+          <ul className="mt-3 space-y-2">
             {route.usedFacilityIds.map((id) => {
               const f = facilities.get(id);
               const word = tr(facilityTypeWord(f?.type ?? 'ELEVATOR'));
               return (
-                <li key={id} className="rounded border border-slate-300 bg-white p-2 text-sm">
-                  <p className="text-slate-900">
-                    <span className="font-semibold capitalize">{word}</span>: {f?.name ?? tr('Facility {id}', { id })}
+                <li key={id} className="rounded-[18px] border border-line bg-white p-3.5 shadow-sh1">
+                  <p className="text-[14px] leading-snug text-ink">
+                    <span className="font-bold capitalize">{word}</span>: {f?.name ?? tr('Facility {id}', { id })}
                   </p>
-                  <button type="button" className={`${btn} mt-1`} onClick={() => onBreak(id)}>
+                  <button type="button" className={`${btn} mt-2 h-auto py-2 text-left`} onClick={() => onBreak(id)}>
                     {tr('Pretend this {word} is broken', { word })}
                   </button>
                 </li>
@@ -1025,12 +1276,13 @@ function RouteDetails({
           </ul>
         )}
         {demoClosed.length > 0 && (
-          <div className="mt-2 text-sm text-slate-900">
-            <p>
+          <div className="mt-3 space-y-2">
+            <p className="rounded-2xl bg-bad-bg px-3.5 py-2.5 text-[14px] font-semibold leading-snug text-bad">
+              <span aria-hidden="true">✕ </span>
               {tr('Pretending broken:')}{' '}
               {demoClosed.map((id) => facilities.get(id)?.shortName ?? facilities.get(id)?.name ?? id).join('; ')}
             </p>
-            <button type="button" className={`${btn} mt-1`} onClick={onReset}>
+            <button type="button" className={btnGhost} onClick={onReset}>
               {tr('Reset')}
             </button>
           </div>

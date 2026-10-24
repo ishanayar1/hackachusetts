@@ -103,13 +103,166 @@ function featureInfo(layerId: string, p: Record<string, unknown>, closed: readon
 const FEATURE_LAYER_ORDER = ['vehicles', 'access-points', 'fatal-points', 'danger-points', ...RAMP_LAYERS];
 
 // "zoom" stays at the top level of these expressions (MapLibre rejects it nested in arithmetic).
-const TRAIN_RADIUS = ['interpolate', ['linear'], ['zoom'], 10, 3.5, 13, 5, 16, 7];
 const POINT_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 10, 0.6, 13, 0.8, 16, 1.1];
-const STATION_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 10, 0.6, 13, 0.85, 16, 1.1];
+const STATION_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 10, 0.75, 12, 0.9, 14, 1.15, 16, 1.4];
+
+/** A small cartoon cat (cream walks the route, tan waits at the destination), drawn once per map. */
+function catImage(fill: string): ImageData | null {
+  const s = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = s;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  g.lineWidth = 3;
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  g.strokeStyle = '#16181D';
+  g.fillStyle = fill;
+  g.beginPath(); // tail
+  g.moveTo(46, 46);
+  g.quadraticCurveTo(62, 42, 55, 26);
+  g.stroke();
+  g.beginPath(); // body
+  g.ellipse(35, 47, 15, 11, 0, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  for (const [a, b, cx] of [[11, 22, 22], [37, 22, 26]] as const) {
+    g.beginPath(); // ears
+    g.moveTo(a, b);
+    g.lineTo(a < 20 ? 13 : 35, 6);
+    g.lineTo(cx, 14);
+    g.closePath();
+    g.fill();
+    g.stroke();
+  }
+  g.beginPath(); // head
+  g.arc(24, 25, 13, 0, Math.PI * 2);
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#16181D';
+  g.beginPath();
+  g.arc(19, 24, 2, 0, Math.PI * 2);
+  g.arc(29, 24, 2, 0, Math.PI * 2);
+  g.fill();
+  g.fillStyle = '#E57373';
+  g.beginPath();
+  g.arc(24, 29, 1.7, 0, Math.PI * 2);
+  g.fill();
+  return g.getImageData(0, 0, s, s);
+}
+
+/** Cartoon train car (line color) or bus (MBTA yellow): rounded body, windows, wheels. Drawn at 2x. */
+function vehicleImage(fill: string, bus: boolean): ImageData | null {
+  const w = bus ? 52 : 60;
+  const h = 40;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  g.lineWidth = 3;
+  g.strokeStyle = '#16181D';
+  g.fillStyle = '#16181D'; // wheels
+  for (const x of bus ? [14, w - 14] : [14, 26, w - 26, w - 14]) {
+    g.beginPath();
+    g.arc(x, h - 7, 4.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  g.fillStyle = fill; // body
+  g.beginPath();
+  g.roundRect(3, 3, w - 6, h - 12, bus ? 8 : 10);
+  g.fill();
+  g.stroke();
+  g.fillStyle = '#ffffff'; // windows
+  const n = bus ? 3 : 3;
+  const ww = (w - 18 - (n - 1) * 4) / n;
+  for (let i = 0; i < n; i++) {
+    g.beginPath();
+    g.roundRect(9 + i * (ww + 4), 9, ww, 10, 3);
+    g.fill();
+  }
+  if (!bus) {
+    g.fillStyle = '#FFE08A'; // headlight
+    g.beginPath();
+    g.arc(w - 8, h - 17, 2.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  return g.getImageData(0, 0, w, h);
+}
+
+/** Vehicle icons are drawn when the map first asks for them (one per line color, plus the bus). */
+function onMissingImage(map: ReturnType<MapRef['getMap']>, id: string) {
+  if (!id.startsWith('lm-veh-') || map.hasImage(id)) return;
+  const bus = id === 'lm-veh-bus';
+  const img = vehicleImage(bus ? '#FFC72C' : `#${id.slice('lm-veh-train-'.length)}`, bus);
+  if (img) map.addImage(id, img, { pixelRatio: 2 });
+}
+
+function addCatIcons(map: ReturnType<MapRef['getMap']>) {
+  for (const [id, fill] of [['lm-cat-cream', '#F6E7C8'], ['lm-cat-tan', '#D9A066']] as const) {
+    if (map.hasImage(id)) continue;
+    const img = catImage(fill);
+    if (img) map.addImage(id, img, { pixelRatio: 2 });
+  }
+}
+
+type LngLat = [number, number];
+const dist2 = (a: LngLat, b: LngLat) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2;
+
+/** Chain every trip line (walks and rides) into one path from the start, flipping lines as needed. */
+function tripPath(start: LngLat | null, ...fcs: (GeoJSON.FeatureCollection | null | undefined)[]): LngLat[] {
+  const lines: LngLat[][] = [];
+  for (const fc of fcs)
+    for (const f of fc?.features ?? []) {
+      if (f.geometry?.type === 'LineString') lines.push(f.geometry.coordinates as LngLat[]);
+      else if (f.geometry?.type === 'MultiLineString') for (const l of f.geometry.coordinates) lines.push(l as LngLat[]);
+    }
+  const usable = lines.filter((l) => l.length > 1);
+  if (!usable.length) return [];
+  let at: LngLat = start ?? usable[0][0];
+  const path: LngLat[] = [];
+  while (usable.length) {
+    let best = 0;
+    let flip = false;
+    let bestD = Infinity;
+    usable.forEach((l, i) => {
+      const d0 = dist2(at, l[0]);
+      const d1 = dist2(at, l[l.length - 1]);
+      if (d0 < bestD) [bestD, best, flip] = [d0, i, false];
+      if (d1 < bestD) [bestD, best, flip] = [d1, i, true];
+    });
+    const line = usable.splice(best, 1)[0];
+    const seg = flip ? [...line].reverse() : line;
+    path.push(...seg);
+    at = seg[seg.length - 1];
+  }
+  return path;
+}
+
+/** Point a fraction k (0..1) of the way along a path. */
+function along(path: LngLat[], k: number): LngLat {
+  const lens: number[] = [];
+  let total = 0;
+  for (let i = 1; i < path.length; i++) {
+    const d = Math.sqrt(dist2(path[i - 1], path[i]));
+    lens.push(d);
+    total += d;
+  }
+  let target = k * total;
+  for (let i = 0; i < lens.length; i++) {
+    if (target <= lens[i] || i === lens.length - 1) {
+      const t = lens[i] ? Math.min(1, target / lens[i]) : 0;
+      const [a, b] = [path[i], path[i + 1]];
+      return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    }
+    target -= lens[i];
+  }
+  return path[path.length - 1];
+}
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 const NO_IDS: string[] = [];
-const ACCESS_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 14, 0.7, 17, 1];
+const ACCESS_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 14, 1.05, 17, 1.4];
 
 const STATION_LAYERS = ['stations-icons'];
 
@@ -118,6 +271,36 @@ const CRASH_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 11, 0.45, 14, 0.75
 // Selection ring: 4 px larger at every stop. MapLibre only allows "zoom" at the top level of interpolate,
 // so ['+', CRASH_RADIUS, 4] is rejected.
 const CRASH_SELECTED_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 6.5, 14, 9, 17, 13];
+
+// MBTA lines: 4-5px in the line color on a white casing, a little wider zoomed in.
+const LINE_WIDTH = ['interpolate', ['linear'], ['zoom'], 10, 3, 13, 4.5, 16, 6];
+const LINE_CASING_WIDTH = ['interpolate', ['linear'], ['zoom'], 10, 5.5, 13, 7.5, 16, 9.5];
+
+type Padding = { top: number; bottom: number; left: number; right: number };
+
+/** Height of the phone bottom sheet in px, from the shell's --sheet-h (38% of the screen if unset). */
+function sheetHeight(): number {
+  const fallback = window.innerHeight * 0.38;
+  const shell = document.querySelector('.app-shell');
+  const raw = shell ? getComputedStyle(shell).getPropertyValue('--sheet-h').trim() : '';
+  const n = parseFloat(raw);
+  if (!raw || !Number.isFinite(n)) return fallback;
+  if (raw.endsWith('px')) return n;
+  if (/v[hw]$|dvh$|svh$|lvh$/.test(raw)) return (n / 100) * window.innerHeight;
+  if (raw.endsWith('%')) return (n / 100) * window.innerHeight;
+  return n === 0 ? 0 : fallback;
+}
+
+/**
+ * Camera padding so the map centers in the area not covered by the UI (layout contract):
+ * desktop: left 432 (panel), top 72 (top bar); phone: top 72, bottom = bottom sheet height.
+ */
+function cameraPadding(containerHeight: number): Padding {
+  if (window.matchMedia('(min-width: 768px)').matches) return { top: 72, bottom: 0, left: 432, right: 0 };
+  // Always leave some map visible between the top bar and the sheet.
+  const bottom = Math.max(0, Math.min(sheetHeight(), containerHeight - 72 - 120));
+  return { top: 72, bottom, left: 0, right: 0 };
+}
 
 // MapLibre 6 looks for its worker next to its own bundle file, which the bundler renames.
 // Point it at the worker emitted as a static asset instead.
@@ -144,13 +327,27 @@ export default function MapView(props: MapViewProps) {
   const [view, setView] = useState({ longitude: -71.08, latitude: 42.35, zoom: 12 });
   const [firstSymbolId, setFirstSymbolId] = useState<string | undefined>(undefined);
 
+  /** Apply the camera padding (on load and resize) so flyTo / fitBounds center in the visible area. */
+  const applyPadding = useCallback(() => {
+    const map = mapRef.current?.getMap();
+    if (!map) return;
+    const p = cameraPadding(map.getContainer().clientHeight);
+    const cur = map.getPadding();
+    if (cur.top !== p.top || cur.bottom !== p.bottom || cur.left !== p.left || cur.right !== p.right) map.setPadding(p);
+  }, []);
+
   const onLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
-    if (map) addMapIcons(map);
+    applyPadding();
+    if (map) {
+      addMapIcons(map);
+      addCatIcons(map);
+      map.on('styleimagemissing', (e: { id: string }) => onMissingImage(map, e.id));
+    }
     const styleLayers = map?.getStyle()?.layers ?? [];
     setFirstSymbolId(labelLayerId(styleLayers));
     setLoadedKey(mapKey);
-  }, [mapKey]);
+  }, [mapKey, applyPadding]);
 
   const onError = useCallback(
     (e: { error?: Error }) => {
@@ -171,7 +368,9 @@ export default function MapView(props: MapViewProps) {
   useEffect(() => {
     if (!flyTo || !mapRef.current) return;
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    const opts = { center: [flyTo.lng, flyTo.lat] as [number, number], zoom: flyTo.zoom ?? 15 };
+    // Fresh padding: the phone sheet may have changed height since the last resize.
+    const padding = cameraPadding(mapRef.current.getContainer().clientHeight);
+    const opts = { center: [flyTo.lng, flyTo.lat] as [number, number], zoom: flyTo.zoom ?? 15, padding };
     if (reduce) mapRef.current.jumpTo(opts);
     else mapRef.current.flyTo({ ...opts, duration: 1200 });
   }, [flyTo]);
@@ -183,10 +382,98 @@ export default function MapView(props: MapViewProps) {
     const h = map.getContainer().clientHeight;
     const y = map.project([pin.lon, pin.lat]).y;
     const POPUP_ROOM = 240;
-    if (y >= POPUP_ROOM || h - y >= POPUP_ROOM) return;
+    // Measure room inside the visible area (between the top bar and the phone sheet).
+    const padding = cameraPadding(h);
+    const visTop = padding.top;
+    const visBottom = h - padding.bottom;
+    if (y - visTop >= POPUP_ROOM || visBottom - y >= POPUP_ROOM) return;
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    map.easeTo({ center: [pin.lon, pin.lat], offset: [0, h / 2 - 40], duration: reduce ? 0 : 400 });
+    // Offsets are from the padded center; put the spot 40px above the visible bottom.
+    const centerY = visTop + (visBottom - visTop) / 2;
+    map.easeTo({ center: [pin.lon, pin.lat], offset: [0, visBottom - 40 - centerY], padding, duration: reduce ? 0 : 400 });
   }, [pin]);
+
+  // Live trains glide to each new position instead of jumping.
+  const shownTrains = useRef(new globalThis.Map<string, LngLat>());
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    const fc = layers.trains ? props.vehicles : undefined;
+    const src = loaded ? (map?.getSource('vehicles') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined) : undefined;
+    if (!fc || !src?.setData) return;
+    const from = shownTrains.current;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const t0 = performance.now();
+    let raf = 0;
+    const frame = (now: number) => {
+      const k = reduce ? 1 : Math.min(1, (now - t0) / 1800);
+      const e = 1 - (1 - k) ** 3;
+      const next = new globalThis.Map<string, LngLat>();
+      const features = fc.features.map((f) => {
+        const id = String(f.properties?.id ?? '');
+        const to = (f.geometry as GeoJSON.Point).coordinates as LngLat;
+        const a = from.get(id) ?? to;
+        const p: LngLat = [a[0] + (to[0] - a[0]) * e, a[1] + (to[1] - a[1]) * e];
+        next.set(id, p);
+        return { ...f, geometry: { type: 'Point' as const, coordinates: p } };
+      });
+      src.setData!({ type: 'FeatureCollection', features });
+      shownTrains.current = next;
+      if (k < 1) raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [props.vehicles, layers.trains, loaded]);
+
+  // A soft halo breathes around each train, and the cream cat walks the trip while the tan cat waits at the end.
+  const startPt = useMemo(() => {
+    const f = props.places?.features.find((x) => x.properties?.role === 'start');
+    return f ? ((f.geometry as GeoJSON.Point).coordinates as LngLat) : null;
+  }, [props.places]);
+  const path = useMemo(() => tripPath(startPt, props.walk, props.route), [startPt, props.walk, props.route]);
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !loaded) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const cats = map.getSource('cats') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined;
+    const end = path.length ? path[path.length - 1] : null;
+    const catFc = (walker: LngLat | null): GeoJSON.FeatureCollection => ({
+      type: 'FeatureCollection',
+      features: [
+        ...(walker ? [{ type: 'Feature' as const, properties: { icon: 'lm-cat-cream' }, geometry: { type: 'Point' as const, coordinates: walker } }] : []),
+        ...(end ? [{ type: 'Feature' as const, properties: { icon: 'lm-cat-tan' }, geometry: { type: 'Point' as const, coordinates: end } }] : []),
+      ],
+    });
+    cats?.setData?.(catFc(path[0] ?? null));
+    if (reduce) return;
+    let raf = 0;
+    const loop = path.length > 1 ? 14000 : 0;
+    const frame = (now: number) => {
+      if (layers.trains && map.getLayer('vehicles-halo')) {
+        const p = (now % 1800) / 1800;
+        map.setPaintProperty('vehicles-halo', 'circle-radius', 7 + p * 12);
+        map.setPaintProperty('vehicles-halo', 'circle-opacity', 0.32 * (1 - p));
+      }
+      if (map.getLayer('stations-alert')) {
+        const q = (now % 1400) / 1400;
+        map.setPaintProperty('stations-alert', 'circle-radius', 8 + q * 14);
+        map.setPaintProperty('stations-alert', 'circle-opacity', 0.45 * (1 - q));
+      }
+      // Street zoom: elevators ride gently up and down; broken ones pulse red.
+      if (map.getZoom() >= 14 && map.getLayer('access-points')) {
+        map.setPaintProperty('access-points', 'icon-translate', [0, -Math.abs(Math.sin(now / 600)) * 3]);
+        const q = (now % 1200) / 1200;
+        map.setPaintProperty('access-broken-pulse', 'circle-radius', 9 + q * 13);
+        map.setPaintProperty('access-broken-pulse', 'circle-opacity', 0.5 * (1 - q));
+      }
+      if (loop && cats?.setData) {
+        cats.setData(catFc(along(path, (now % loop) / loop)));
+        if (map.getLayer('cats')) map.setPaintProperty('cats', 'icon-translate', [0, -Math.abs(Math.sin(now / 140)) * 3]);
+      }
+      raf = requestAnimationFrame(frame);
+    };
+    raf = requestAnimationFrame(frame);
+    return () => cancelAnimationFrame(raf);
+  }, [loaded, layers.trains, path]);
 
   /** Select whatever was tapped; false when nothing selectable was under the tap. */
   const selectTapped = useCallback(
@@ -244,9 +531,9 @@ export default function MapView(props: MapViewProps) {
   const crashVisible = crashMode !== 'off';
 
   return (
-    <div className="relative h-full w-full">
+    <div className="relative h-full w-full bg-mapbg">
       {failed ? (
-        <div className="flex h-full items-center justify-center bg-slate-100 p-6 text-center text-slate-800">
+        <div className="flex h-full items-center justify-center bg-mapbg p-6 text-center text-[15px] font-semibold text-ink-2">
           <p>The map could not load. Everything it shows is also in the panel.</p>
         </div>
       ) : (
@@ -261,6 +548,7 @@ export default function MapView(props: MapViewProps) {
           }}
           style={{ width: '100%', height: '100%' }}
           onLoad={onLoad}
+          onResize={applyPadding}
           onError={onError}
           onClick={onClick}
           interactiveLayerIds={interactive}
@@ -327,14 +615,16 @@ export default function MapView(props: MapViewProps) {
                   type="line"
                   beforeId={firstSymbolId}
                   layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-                  paint={{ 'line-color': '#ffffff', 'line-width': 6 }}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  paint={{ 'line-color': '#ffffff', 'line-width': LINE_CASING_WIDTH as any }}
                 />
                 <Layer
                   id="lines"
                   type="line"
                   beforeId={firstSymbolId}
                   layout={{ 'line-cap': 'round', 'line-join': 'round' }}
-                  paint={{ 'line-color': ['coalesce', ['get', 'color'], '#555555'], 'line-width': 3.5 }}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  paint={{ 'line-color': ['coalesce', ['get', 'color'], '#555555'], 'line-width': LINE_WIDTH as any }}
                 />
               </Source>
               {/* Curb ramps (City of Boston): brown square with a ramp wedge; a bar at the edge marks a lip. From zoom 14. */}
@@ -487,15 +777,36 @@ export default function MapView(props: MapViewProps) {
               {/* Live trains: dot in the line color with a white outline; an arrow shows direction from zoom 11. */}
               <Source id="vehicles" type="geojson" data={(layers.trains && props.vehicles) || EMPTY_FC}>
                 <Layer
-                  id="vehicles"
+                  id="vehicles-halo"
                   type="circle"
+                  filter={['!=', ['get', 'mode'], 'bus']}
                   layout={{ visibility: vis(layers.trains) }}
-                  paint={{
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'circle-radius': TRAIN_RADIUS as any,
-                    'circle-color': ['get', 'color'],
-                    'circle-stroke-color': '#ffffff',
-                    'circle-stroke-width': 1.5,
+                  paint={{ 'circle-radius': 10, 'circle-color': ['get', 'color'], 'circle-opacity': 0.25 }}
+                />
+                {/* Buses only from street zoom, so the city view stays clean. */}
+                <Layer
+                  id="vehicles-bus"
+                  type="symbol"
+                  minzoom={12.5}
+                  filter={['==', ['get', 'mode'], 'bus']}
+                  layout={{
+                    visibility: vis(layers.trains),
+                    'icon-image': ['get', 'vicon'],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 12.5, 1, 16, 1.4],
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true,
+                  }}
+                />
+                <Layer
+                  id="vehicles"
+                  type="symbol"
+                  filter={['!=', ['get', 'mode'], 'bus']}
+                  layout={{
+                    visibility: vis(layers.trains),
+                    'icon-image': ['get', 'vicon'],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 10, 1, 13, 1.25, 16, 1.6],
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true,
                   }}
                 />
                 <Layer
@@ -509,13 +820,24 @@ export default function MapView(props: MapViewProps) {
                     'icon-rotate': ['get', 'bearing'],
                     'icon-rotation-alignment': 'map',
                     // the offset is applied in the rotated frame, so the arrow sits ahead of the dot
-                    'icon-offset': [0, -11],
+                    'icon-offset': [0, -17],
                     'icon-allow-overlap': true,
                     'icon-ignore-placement': true,
                   }}
                 />
               </Source>
               <Source id="stations" type="geojson" data={stations}>
+                {/* Pulsing ring behind stations with broken step-free equipment (the icon still carries the state). */}
+                <Layer
+                  id="stations-alert"
+                  type="circle"
+                  filter={['in', ['get', 'state'], ['literal', ['no', 'partial']]]}
+                  paint={{
+                    'circle-radius': 10,
+                    'circle-color': ['match', ['get', 'state'], 'no', '#B4231A', '#ED8B00'],
+                    'circle-opacity': 0.3,
+                  }}
+                />
                 {/* Shape and symbol differ by state, not just color (legend in MapKey). */}
                 <Layer
                   id="stations-icons"
@@ -594,6 +916,20 @@ export default function MapView(props: MapViewProps) {
                   paint={{ 'circle-radius': 7, 'circle-color': '#1d4ed8', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 }}
                 />
               </Source>
+              {/* Decorative cats (the trip itself is listed as text in the panel). */}
+              <Source id="cats" type="geojson" data={EMPTY_FC}>
+                <Layer
+                  id="cats"
+                  type="symbol"
+                  layout={{
+                    'icon-image': ['get', 'icon'],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 1.1, 15, 1.5],
+                    'icon-anchor': 'bottom',
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true,
+                  }}
+                />
+              </Source>
               {pin && (
                 <Popup
                   longitude={pin.lon}
@@ -610,6 +946,15 @@ export default function MapView(props: MapViewProps) {
                   station doors (green; grey with a slash when not step-free). From zoom 14 to keep the map clear.
                   Above stations so a broken elevator is never hidden under its station. */}
               <Source id="access" type="geojson" data={(layers.access && props.access) || EMPTY_FC}>
+                {/* Pulsing red ring under each out-of-service elevator, lift or ramp. */}
+                <Layer
+                  id="access-broken-pulse"
+                  type="circle"
+                  minzoom={14}
+                  filter={['in', ['get', 'id'], ['literal', closedIds]]}
+                  layout={{ visibility: vis(layers.access) }}
+                  paint={{ 'circle-radius': 10, 'circle-color': '#B4231A', 'circle-opacity': 0.3 }}
+                />
                 <Layer
                   id="access-points"
                   type="symbol"

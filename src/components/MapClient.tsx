@@ -5,8 +5,8 @@ import dynamic from 'next/dynamic';
 const MapClient = dynamic(() => import('./MapView'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-full items-center justify-center bg-slate-100 text-slate-700">
-      <p>Loading map…</p>
+    <div className="flex h-full items-center justify-center bg-mapbg text-[13px] font-medium text-muted">
+      <p className="rounded-full bg-white px-3.5 py-1.5 shadow-sh1">Loading map…</p>
     </div>
   ),
 });

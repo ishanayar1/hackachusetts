@@ -1,11 +1,12 @@
 'use client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { btn, btnPrimary, Notice } from '@/components/ui';
+import { btn, btnPrimary, input as inputCls, Notice } from '@/components/ui';
 import { authClient } from '@/lib/ui/auth-client';
 
 const LABEL = { google: 'Google', github: 'GitHub' } as const;
-const input = 'mt-1 block min-h-11 w-full rounded-md border border-slate-500 px-3 text-base';
+const input = `${inputCls} mt-1.5 block`;
+const label = 'block text-[14px] font-bold text-ink';
 
 export default function LoginForm({ providers }: { providers: (keyof typeof LABEL)[] }) {
   const router = useRouter();
@@ -31,18 +32,18 @@ export default function LoginForm({ providers }: { providers: (keyof typeof LABE
 
   return (
     <div className="space-y-4">
-      <form onSubmit={onSubmit} className="space-y-3">
+      <form onSubmit={onSubmit} className="space-y-3.5">
         {mode === 'up' && (
-          <label className="block text-sm font-semibold">
+          <label className={label}>
             Name
             <input name="name" required autoComplete="name" className={input} />
           </label>
         )}
-        <label className="block text-sm font-semibold">
+        <label className={label}>
           Email
           <input name="email" type="email" required autoComplete="email" className={input} />
         </label>
-        <label className="block text-sm font-semibold">
+        <label className={label}>
           Password
           <input
             name="password"
@@ -54,14 +55,14 @@ export default function LoginForm({ providers }: { providers: (keyof typeof LABE
           />
         </label>
         <div role="alert">{error && <Notice tone="error">{error}</Notice>}</div>
-        <button type="submit" disabled={busy} className={`${btnPrimary} w-full`}>
+        <button type="submit" disabled={busy} className={`${btnPrimary} min-h-12 w-full`}>
           {mode === 'up' ? 'Create account' : 'Sign in'}
         </button>
       </form>
 
       <button
         type="button"
-        className="min-h-11 text-sm font-semibold text-blue-800 underline"
+        className="mx-auto flex min-h-11 items-center rounded-full px-3 text-[14px] font-bold text-t-blue underline decoration-2 underline-offset-4 transition duration-200 hover:bg-soft active:scale-[.97]"
         onClick={() => {
           setMode(mode === 'in' ? 'up' : 'in');
           setError(null);
@@ -71,7 +72,7 @@ export default function LoginForm({ providers }: { providers: (keyof typeof LABE
       </button>
 
       {providers.length > 0 && (
-        <div className="space-y-2 border-t border-slate-300 pt-4">
+        <div className="space-y-2.5 border-t border-line pt-4">
           {providers.map((p) => (
             <button
               key={p}

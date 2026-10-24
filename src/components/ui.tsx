@@ -61,7 +61,7 @@ export function SourceBadge({ source, fetchedAt }: { source?: DataSource; fetche
   const t = useT();
   if (!source || source === 'v3') return null;
   return (
-    <p className="mt-2 inline-flex items-center gap-1.5 rounded border border-amber-700 bg-amber-50 px-2 py-1 text-sm text-amber-900">
+    <p className={`${badge} ${badgeWarn} mt-2`}>
       <span aria-hidden="true">⚠</span>
       {t('Showing saved data from {time}', { time: formatTime(fetchedAt) || t('earlier') })}
       {source === 'demo' ? ` (${t('demo snapshot')})` : ''}
@@ -70,15 +70,43 @@ export function SourceBadge({ source, fetchedAt }: { source?: DataSource; fetche
 }
 
 export function Notice({ children, tone = 'info' }: { children: React.ReactNode; tone?: 'info' | 'error' }) {
-  const cls =
-    tone === 'error' ? 'border-red-700 bg-red-50 text-red-900' : 'border-slate-400 bg-slate-50 text-slate-800';
-  return <p className={`rounded border px-3 py-2 text-sm ${cls}`}>{children}</p>;
+  const cls = tone === 'error' ? 'bg-bad-bg text-bad' : 'bg-soft text-ink-2';
+  return <p className={`rounded-2xl px-3.5 py-2.5 text-[14px] font-semibold ${cls}`}>{children}</p>;
 }
 
-export const btn =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-700 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 disabled:opacity-50';
-export const btnPrimary =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-blue-800 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900 disabled:opacity-50';
+/*
+ * Shared class strings (Transit Pop look, compact sizes). Type: body 15px, secondary 13-14px, buttons 15px bold,
+ * section titles 16px, page titles 24px. Icons: 18px in buttons, 14-16px inline, 22px in the nav.
+ */
+const press = 'transition duration-200 active:scale-[.97] disabled:pointer-events-none disabled:opacity-50';
+export const btn = `inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-line bg-white px-4 text-[15px] font-bold text-ink shadow-sh1 hover:border-line-2 hover:bg-soft hover:shadow-sh2 [&_svg]:size-[18px] ${press}`;
+export const btnPrimary = `inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-ink px-5 text-[15px] font-bold text-white shadow-sh2 hover:bg-[#2a2e37] hover:shadow-sh3 [&_svg]:size-[18px] ${press}`;
+/** Quiet button on a soft grey fill (secondary actions, "Close"). */
+export const btnGhost = `inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-soft px-4 text-[15px] font-bold text-ink hover:bg-soft-2 [&_svg]:size-[18px] ${press}`;
+/** Round 44px icon-only button. Give it an aria-label. */
+export const iconBtn = `inline-grid size-11 shrink-0 place-items-center rounded-full border border-line bg-white text-ink shadow-sh2 hover:shadow-sh3 [&_svg]:size-5 ${press}`;
+/** Toggle chip: add aria-pressed; the pressed state turns it dark. */
+export const chip = `inline-flex min-h-11 items-center gap-2 rounded-full border border-line bg-white px-3.5 text-[14px] font-bold text-ink hover:border-line-2 aria-pressed:border-ink aria-pressed:bg-ink aria-pressed:text-white [&_svg]:size-4 ${press}`;
+export const card = 'rounded-card border border-line bg-white p-4 shadow-sh1';
+/** A card that lifts on hover (clickable rows). */
+export const cardHover = `${card} transition duration-200 hover:-translate-y-px hover:shadow-sh2`;
+/** Full-width tappable list row. */
+export const listItem =
+  'flex w-full items-start gap-3 rounded-[18px] border border-line bg-white p-3.5 text-left shadow-sh1 transition duration-200 hover:-translate-y-px hover:shadow-sh2';
+export const badge =
+  'inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[13px] font-bold [&_svg]:size-3.5';
+export const badgeOk = 'bg-ok-bg text-ok';
+export const badgeWarn = 'bg-warn-bg text-warn';
+export const badgeBad = 'bg-bad-bg text-bad';
+export const badgeNeutral = 'border border-line bg-soft text-ink-2';
+export const input =
+  'min-h-12 w-full rounded-2xl border border-line bg-white px-4 text-[15px] font-semibold text-ink shadow-sh1 outline-none transition placeholder:font-medium placeholder:text-muted focus:border-t-blue focus:ring-4 focus:ring-t-blue/15';
+export const pageTitle = 'text-[24px] font-extrabold leading-tight tracking-[-0.02em] text-ink';
+export const sectionTitle = 'text-[16px] font-bold tracking-[-0.01em] text-ink';
+export const mutedText = 'text-[13px] font-medium text-muted';
+/** Small stat tile: big number on top, label below. */
+export const statTile = 'flex-1 rounded-[18px] border border-line bg-soft p-3.5';
+export const statNumber = 'text-[28px] font-extrabold leading-none tracking-[-0.03em] text-ink';
 
 /** Star / unstar a station for "My stations". Text changes too, so state is not shown by the icon alone. */
 export function StarButton({ saved, name, onToggle }: { saved: boolean; name: string; onToggle: () => void }) {

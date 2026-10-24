@@ -169,16 +169,17 @@ describe('crash intersections (local fallback search)', () => {
 });
 
 describe('minimal default map', () => {
-  it('defaults to the model and hides the low-risk bin', () => {
-    expect(DEFAULT_CRASH_MODE).toBe('model');
+  it('opens with the crash layer off; the model hides the low-risk bin', () => {
+    expect(DEFAULT_CRASH_MODE).toBe('off');
     expect(MODEL_MIN_SHOWN).toBe(MODEL_BINS[1].min);
     expect(crashFilter('model')).toEqual(['>=', ['get', 'risk_yr'], 0.5]);
     expect(crashFilter('recorded')).toBeUndefined();
   });
 
-  it('starts with every optional layer off except elevators, lifts and doors', () => {
-    const { access, ...rest } = DEFAULT_LAYERS;
+  it('starts with every optional layer off except live trains and elevators, lifts and doors', () => {
+    const { access, trains, ...rest } = DEFAULT_LAYERS;
     expect(access).toBe(true);
+    expect(trains).toBe(true);
     expect(Object.values(rest).every((v) => v === false)).toBe(true);
   });
 });

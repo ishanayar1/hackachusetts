@@ -4,7 +4,7 @@ import { useId, type ReactNode } from 'react';
 import type { MapLayerToggles } from '@/lib/ui/api';
 import { DEFAULT_LAYERS, MODEL_BINS, RECORDED_BINS, type CrashMode } from '@/lib/ui/format';
 import { SKINS, type MapSkin } from '@/lib/ui/map-skins';
-import { StateIcon } from './ui';
+import { chip, mutedText, sectionTitle, StateIcon } from './ui';
 import { useT, type T } from '@/lib/i18n';
 
 const MODES: { id: CrashMode; label: string }[] = [
@@ -188,22 +188,22 @@ export default function MapKey({
   // The model hides its lowest bin on the map (see crashFilter), so the key does too.
   const bins = mode === 'model' ? MODEL_BINS.slice(1) : RECORDED_BINS;
   return (
-    <details className="rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-900">
-      <summary className="flex min-h-11 cursor-pointer items-center font-semibold">{t('Map style, key and layers')}</summary>
-      <div className="space-y-3 pt-2">
+    <div className="text-[14px] text-ink">
+      <h2 className={sectionTitle}>{t('Map style, key and layers')}</h2>
+      <div className="space-y-4 pt-3">
         {skin && onSkin && (
           <fieldset>
-            <legend className="font-semibold">{t('Map style')}</legend>
-            <div className="flex flex-wrap gap-x-4">
+            <legend className={`${legendCls}`}>{t('Map style')}</legend>
+            <div className="flex flex-wrap gap-2">
               {SKINS.map((k) => (
-                <label key={k.id} className="flex min-h-11 items-center gap-2">
+                <label key={k.id} className={`${chip} cursor-pointer ${checkedChip}`}>
                   <input
                     type="radio"
                     name={skinName}
                     value={k.id}
                     checked={skin === k.id}
                     onChange={() => onSkin(k.id)}
-                    className="h-5 w-5"
+                    className="peer sr-only"
                   />
                   {t(k.label)}
                 </label>
@@ -213,24 +213,35 @@ export default function MapKey({
         )}
         {layers && onLayers && (
           <fieldset>
-            <legend className="font-semibold">{t('Map layers')}</legend>
-            <ul className="space-y-1">
+            <legend className={legendCls}>{t('Map layers')}</legend>
+            <ul className="divide-y divide-line overflow-hidden rounded-[18px] border border-line">
               {LAYER_ROWS.map((row) => (
-                <li key={row.id}>
-                  <label className="flex min-h-11 items-center gap-2">
-                    <input
-                      type="checkbox"
-                      checked={layers[row.id]}
-                      onChange={(e) => onLayers({ ...layers, [row.id]: e.target.checked })}
-                      className="h-5 w-5 shrink-0"
-                    />
+                <li key={row.id} className="bg-white">
+                  <label className="flex min-h-[52px] cursor-pointer items-center gap-3 px-3 py-2 transition-colors duration-200 hover:bg-soft has-[:focus-visible]:outline has-[:focus-visible]:outline-[3px] has-[:focus-visible]:-outline-offset-[3px] has-[:focus-visible]:outline-t-blue">
                     {row.symbol}
-                    <span>{t(row.label)}</span>
+                    <span className="min-w-0 flex-1 text-[15px] font-bold leading-snug">{t(row.label)}</span>
+                    <span className="relative h-8 w-[52px] shrink-0">
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={layers[row.id]}
+                        onChange={(e) => onLayers({ ...layers, [row.id]: e.target.checked })}
+                        className="peer sr-only"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="absolute inset-0 rounded-full bg-line-2 transition-colors duration-200 peer-checked:bg-ink"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className="absolute left-1 top-1 size-6 rounded-full bg-white shadow-sh2 transition-transform duration-300 ease-[var(--spring)] peer-checked:translate-x-5"
+                      />
+                    </span>
                   </label>
                   {layers[row.id] && (
-                    <div className="ml-7 space-y-1 text-slate-800">
+                    <div className="lm-in space-y-1.5 px-3 pb-3 text-[13px] font-medium text-muted">
                       <div>{LAYER_NOTES[row.id]?.(t)}</div>
-                      {summary?.[row.id] && <p>{summary[row.id]}</p>}
+                      {summary?.[row.id] && <p className="text-ink-2">{summary[row.id]}</p>}
                     </div>
                   )}
                 </li>
@@ -238,7 +249,8 @@ export default function MapKey({
             </ul>
           </fieldset>
         )}
-        <ul className="space-y-1" aria-label={t('Station symbols')}>
+        <h3 className={legendCls}>{t('Station symbols')}</h3>
+        <ul className="-mt-2 space-y-1.5 text-[13px] font-medium text-ink-2" aria-label={t('Station symbols')}>
           <li className="flex items-center gap-2">
             <StateIcon state="yes" /> {t('Green circle with a wheelchair: step-free now')}
           </li>
@@ -266,27 +278,32 @@ export default function MapKey({
           </li>
         </ul>
         <fieldset>
-          <legend className="font-semibold">{t('Crash layer')}</legend>
-          {MODES.map((m) => (
-            <label key={m.id} className="flex min-h-11 items-center gap-2">
-              <input
-                type="radio"
-                name={name}
-                value={m.id}
-                checked={mode === m.id}
-                onChange={() => onMode(m.id)}
-                className="h-5 w-5"
-              />
-              {t(m.label)}
-            </label>
-          ))}
+          <legend className={legendCls}>{t('Crash layer')}</legend>
+          <div className="flex flex-wrap gap-1 rounded-[22px] border border-line bg-soft p-1">
+            {MODES.map((m) => (
+              <label
+                key={m.id}
+                className="flex min-h-11 flex-auto cursor-pointer items-center justify-center rounded-[18px] px-3 py-1.5 text-center text-[14px] font-bold leading-tight text-ink-2 transition duration-200 hover:text-ink active:scale-[.97] has-[:checked]:bg-ink has-[:checked]:text-white has-[:checked]:shadow-sh1 has-[:focus-visible]:outline has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-t-blue"
+              >
+                <input
+                  type="radio"
+                  name={name}
+                  value={m.id}
+                  checked={mode === m.id}
+                  onChange={() => onMode(m.id)}
+                  className="sr-only"
+                />
+                {t(m.label)}
+              </label>
+            ))}
+          </div>
         </fieldset>
         {mode !== 'off' && (
-          <div>
-            <p className="font-semibold">
+          <div className="lm-in rounded-card border border-line bg-white p-3">
+            <p className="text-[14px] font-bold text-ink">
               {t(mode === 'model' ? 'Estimated crashes per intersection (team model)' : 'Pedestrian & bike crashes per intersection')}
             </p>
-            <ul className="mt-1 space-y-1">
+            <ul className="mt-2 space-y-1.5 text-[13px] font-medium text-ink-2">
               {bins.map((b) => (
                 <li key={b.label} className="flex items-center gap-2">
                   <WarnSym fill={b.color} />
@@ -295,17 +312,22 @@ export default function MapKey({
               ))}
             </ul>
             {mode === 'model' && (
-              <p className="mt-1 text-slate-800">
+              <p className={`mt-2 ${mutedText}`}>
                 {t('Intersections under 0.5 crashes a year are hidden to keep the map clear.')}
               </p>
             )}
             {mode === 'model' && (
-              <p className="mt-1 text-slate-800">{t('Model estimate from police-reported crashes. Not a guarantee.')}</p>
+              <p className={`mt-1 ${mutedText}`}>{t('Model estimate from police-reported crashes. Not a guarantee.')}</p>
             )}
-            <p className="mt-1 text-slate-700">{t('Historical, not live. Tap an intersection for its numbers.')}</p>
+            <p className={`mt-1 ${mutedText}`}>{t('Historical, not live. Tap an intersection for its numbers.')}</p>
           </div>
         )}
       </div>
-    </details>
+    </div>
   );
 }
+
+const legendCls = 'mb-2 text-[13px] font-bold uppercase tracking-[0.04em] text-muted';
+/** Skin chips use a hidden radio, so the checked state comes from :has instead of aria-pressed. */
+const checkedChip =
+  'has-[:checked]:border-ink has-[:checked]:bg-ink has-[:checked]:text-white has-[:focus-visible]:outline has-[:focus-visible]:outline-[3px] has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-t-blue';

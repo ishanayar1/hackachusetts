@@ -1,9 +1,39 @@
 'use client';
 // "My stations": starred stations with step-free status now and any active accessibility alert.
 import type { Station, StationStatusRow } from '@/lib/ui/api';
-import { ACCESS_EFFECTS, alertActive, effectLabel, partialLines, stepFreeState } from '@/lib/ui/format';
+import {
+  ACCESS_EFFECTS,
+  alertActive,
+  effectLabel,
+  partialLines,
+  ROUTE_COLORS,
+  stepFreeState,
+  type StepFreeState,
+} from '@/lib/ui/format';
 import { useAlerts, useFacilities } from '@/lib/ui/hooks';
-import { StarButton, StateText } from './ui';
+import {
+  badge,
+  badgeBad,
+  badgeNeutral,
+  badgeOk,
+  badgeWarn,
+  listItem,
+  mutedText,
+  pageTitle,
+  StarButton,
+  StateText,
+} from './ui';
+
+const STATE_TONE: Record<StepFreeState, string> = { yes: badgeOk, partial: badgeWarn, no: badgeBad, unknown: badgeNeutral };
+
+/** Line color(s) for the small station tile; a split tile when the station serves more than one line. */
+function tileBackground(routes: string[]) {
+  const colors = [...new Set(routes.map((r) => ROUTE_COLORS[r]).filter(Boolean))];
+  if (colors.length === 0) return 'var(--muted)';
+  if (colors.length === 1) return colors[0];
+  const step = 100 / colors.length;
+  return `linear-gradient(135deg, ${colors.map((c, i) => `${c} ${i * step}% ${(i + 1) * step}%`).join(', ')})`;
+}
 import { useT } from '@/lib/i18n';
 
 export default function MyStations({
@@ -29,67 +59,79 @@ export default function MyStations({
   const t = useT();
 
   return (
-    <section aria-labelledby="mine-h" className="rounded-md border border-slate-400 bg-white p-3">
-      <h2 id="mine-h" className="text-lg font-bold text-slate-900">
-        <span aria-hidden="true">★ </span>{t('My stations')}
+    <section aria-labelledby="mine-h" className="lm-in">
+      <h2 id="mine-h" className={pageTitle}>
+        <span aria-hidden="true" className="text-t-yellow">★ </span>
+        {t('My stations')}
       </h2>
       {saved.length === 0 ? (
-        <p className="mt-1 text-sm text-slate-800">
+        <p className="mt-3 rounded-[18px] border border-dashed border-line-2 bg-soft p-4 text-[14px] font-medium text-ink-2">
           {t('No saved stations yet. Open a station and choose Save to see it here.')}
         </p>
       ) : (
-        <ul className="mt-2 space-y-2">
+        <ul className="mt-3 space-y-2">
           {saved.map((s) => {
             const row = live.get(s.id);
             const state = stepFreeState(s, row);
             const mine = alerts.filter((a) => a.stationIds.includes(s.id));
             return (
-              <li key={s.id} className="rounded border border-slate-300 p-2 text-sm text-slate-900">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    className="min-h-11 text-left font-semibold text-blue-800 underline underline-offset-2"
-                    onClick={() => onSelectStation(s.id)}
-                  >
-                    {s.name}
-                  </button>
-                  <StarButton saved name={s.name} onToggle={() => onToggle(s.id)} />
+              <li key={s.id} className={listItem}>
+                <span
+                  aria-hidden="true"
+                  className="mt-2 size-[30px] shrink-0 rounded-[10px] shadow-sh1"
+                  style={{ background: tileBackground(s.routes) }}
+                />
+                <div className="min-w-0 flex-1 text-[14px] text-ink-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      className="min-h-11 min-w-0 text-left text-[15px] font-bold text-ink underline decoration-line-2 underline-offset-4 transition hover:decoration-ink"
+                      onClick={() => onSelectStation(s.id)}
+                    >
+                      {s.name}
+                    </button>
+                    <StarButton saved name={s.name} onToggle={() => onToggle(s.id)} />
+                  </div>
+                  <span className={`${badge} ${STATE_TONE[state]} mt-1`}>
+                    <StateText state={state} />
+                  </span>
+                  {state === 'no' && row && row.blockedBy.length > 0 && (
+                    <p className="mt-1.5 font-medium">
+                      {t('Out of service: {list}', { list: row.blockedBy.map(facilityName).join('; ') })}
+                    </p>
+                  )}
+                  {state === 'partial' && row && (
+                    <ul className="mt-1.5 space-y-0.5 font-medium">
+                      {partialLines(row.blockedPlatforms, row.blockedBy ?? [], facilityName).map((line) => (
+                        <li key={line}>{line}</li>
+                      ))}
+                    </ul>
+                  )}
+                  {mine.length > 0 ? (
+                    <ul className="mt-2 space-y-1.5">
+                      {mine.map((a) => (
+                        <li key={a.id} className="flex items-start gap-2 rounded-xl bg-bad-bg px-3 py-2 text-ink">
+                          <span aria-hidden="true" className="font-bold text-bad">
+                            ⚠
+                          </span>
+                          <span>
+                            <strong>{t(effectLabel(a.effect))}:</strong> {a.shortHeader || a.header}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    data && <p className={`mt-1.5 ${mutedText}`}>{t('No active accessibility alerts.')}</p>
+                  )}
+                  <PhoneAlerts stationId={s.id} />
                 </div>
-                <StateText state={state} />
-                {state === 'no' && row && row.blockedBy.length > 0 && (
-                  <p className="text-slate-800">
-                    {t('Out of service: {list}', { list: row.blockedBy.map(facilityName).join('; ') })}
-                  </p>
-                )}
-                {state === 'partial' && row && (
-                  <ul className="text-slate-800">
-                    {partialLines(row.blockedPlatforms, row.blockedBy ?? [], facilityName).map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                )}
-                {mine.length > 0 ? (
-                  <ul className="mt-1 space-y-1">
-                    {mine.map((a) => (
-                      <li key={a.id} className="flex items-start gap-1.5">
-                        <span aria-hidden="true">⚠</span>
-                        <span>
-                          <strong>{t(effectLabel(a.effect))}:</strong> {a.shortHeader || a.header}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  data && <p className="text-slate-700">{t('No active accessibility alerts.')}</p>
-                )}
-                <PhoneAlerts stationId={s.id} />
               </li>
             );
           })}
         </ul>
       )}
       {saved.length > 0 && (
-        <p className="mt-2 text-xs text-slate-700">
+        <p className={`mt-3 ${mutedText}`}>
           {t('Alerts in this app update while it is open. For alerts when it is closed, use phone alerts below each station.')}
         </p>
       )}
@@ -103,16 +145,18 @@ function PhoneAlerts({ stationId }: { stationId: string }) {
   const t = useT();
   return (
     <details className="mt-1">
-      <summary className="min-h-11 cursor-pointer py-2 font-semibold text-blue-800 underline">{t('Get phone alerts')}</summary>
+      <summary className="flex min-h-11 cursor-pointer items-center text-[14px] font-bold text-t-blue underline decoration-t-blue/30 underline-offset-4 hover:decoration-t-blue">
+        {t('Get phone alerts')}
+      </summary>
       <p>
-        {t('Topic:')} <code className="rounded bg-slate-100 px-1">{topic}</code>
+        {t('Topic:')} <code className="rounded-lg border border-line bg-soft px-1.5 py-0.5 text-[13px] text-ink">{topic}</code>
       </p>
       <p>
         <a
           href={`https://ntfy.sh/${topic}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex min-h-11 items-center font-semibold text-blue-800 underline"
+          className="inline-flex min-h-11 items-center font-bold text-t-blue underline underline-offset-4"
         >
           ntfy.sh/{topic}
           <span className="sr-only"> {t('(opens in a new tab)')}</span>

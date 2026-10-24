@@ -1,7 +1,7 @@
 'use client';
 // Three short questions after sign-up: main way of travel, access needs, saved places.
 import { useEffect, useId, useRef, useState } from 'react';
-import { btn, btnPrimary, Notice } from '@/components/ui';
+import { btn, btnPrimary, input as inputCls, mutedText, Notice } from '@/components/ui';
 import type { GeoHit } from '@/lib/geocode';
 import { useT } from '@/lib/i18n';
 import { ProfileSchema, type Need, type Profile, type SavedPlace, type Service } from '@/lib/profile';
@@ -21,7 +21,12 @@ const NEED_TEXT: [Need, string][] = [
   ['none', 'None of these'],
 ];
 const MAX_PLACES = 10;
-const input = 'mt-1 block min-h-11 w-full rounded-md border border-slate-500 px-3 text-base';
+const input = `${inputCls} mt-1.5 block`;
+const fieldLabel = 'block text-[14px] font-bold text-ink';
+/** Selectable option row (radio / checkbox inside); the checked one gets a dark border. */
+const option =
+  'flex min-h-12 w-full cursor-pointer items-center gap-3 rounded-[18px] border border-line bg-white px-3.5 py-2.5 text-[15px] font-semibold text-ink shadow-sh1 transition duration-200 hover:-translate-y-px hover:shadow-sh2 has-[:checked]:border-ink has-[:checked]:bg-soft';
+const control = 'size-5 shrink-0 accent-[#16181d]';
 
 type Row = { key: number; kind: SavedPlace['kind']; name: string; query: string; hit: GeoHit | null };
 let nextKey = 0;
@@ -92,23 +97,33 @@ export default function WelcomeForm({ initial }: { initial: Profile | null }) {
   };
 
   return (
-    <div className="mt-4 space-y-4">
-      <p className="text-sm text-slate-700">{t('Step {n} of 3', { n: step })}</p>
-      <h2 ref={heading} tabIndex={-1} className="text-xl font-bold outline-none">
+    <div className="mt-6 space-y-4">
+      <div className="space-y-2">
+        <div aria-hidden="true" className="flex gap-1.5">
+          {[1, 2, 3].map((n) => (
+            <span
+              key={n}
+              className={`h-1.5 flex-1 rounded-full transition-colors duration-200 ${n <= step ? 'bg-ink' : 'bg-soft-2'}`}
+            />
+          ))}
+        </div>
+        <p className={mutedText}>{t('Step {n} of 3', { n: step })}</p>
+      </div>
+      <h2 ref={heading} tabIndex={-1} className="text-[20px] font-extrabold leading-tight tracking-[-0.02em] text-ink outline-none">
         {t(step === 1 ? 'How will you travel most?' : step === 2 ? 'What should we plan around?' : 'Save your places')}
       </h2>
 
       {step === 1 && (
-        <fieldset>
+        <fieldset className="space-y-2">
           <legend className="sr-only">{t('How will you travel most?')}</legend>
           {SERVICE_TEXT.map(([id, label]) => (
-            <label key={id} className="flex min-h-11 items-center gap-2">
+            <label key={id} className={option}>
               <input
                 type="radio"
                 name={`${ids}-service`}
                 checked={service === id}
                 onChange={() => setService(id)}
-                className="h-5 w-5"
+                className={control}
               />
               {t(label)}
             </label>
@@ -117,11 +132,11 @@ export default function WelcomeForm({ initial }: { initial: Profile | null }) {
       )}
 
       {step === 2 && (
-        <fieldset>
-          <legend className="text-sm text-slate-700">{t('Optional. Pick any that apply.')}</legend>
+        <fieldset className="space-y-2">
+          <legend className={`${mutedText} mb-2`}>{t('Optional. Pick any that apply.')}</legend>
           {NEED_TEXT.map(([id, label]) => (
-            <label key={id} className="flex min-h-11 items-center gap-2">
-              <input type="checkbox" checked={needs.includes(id)} onChange={() => toggleNeed(id)} className="h-5 w-5" />
+            <label key={id} className={option}>
+              <input type="checkbox" checked={needs.includes(id)} onChange={() => toggleNeed(id)} className={control} />
               {t(label)}
             </label>
           ))}
@@ -129,8 +144,8 @@ export default function WelcomeForm({ initial }: { initial: Profile | null }) {
       )}
 
       {step === 3 && (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-700">{t('Optional. Search an address in Greater Boston and pick the right one.')}</p>
+        <div className="space-y-3">
+          <p className={mutedText}>{t('Optional. Search an address in Greater Boston and pick the right one.')}</p>
           {rows.map((r) => (
             <PlaceRow
               key={r.key}
@@ -148,18 +163,18 @@ export default function WelcomeForm({ initial }: { initial: Profile | null }) {
       )}
 
       <div role="alert">{error && <Notice tone="error">{error}</Notice>}</div>
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap gap-2 pt-1">
         {step > 1 && (
           <button type="button" className={btn} onClick={() => setStep(step - 1)}>
             {t('Back')}
           </button>
         )}
         {step < 3 ? (
-          <button type="button" className={btnPrimary} onClick={next}>
+          <button type="button" className={`${btnPrimary} min-h-12 flex-1`} onClick={next}>
             {t('Next')}
           </button>
         ) : (
-          <button type="button" className={btnPrimary} disabled={busy} onClick={() => void save()}>
+          <button type="button" className={`${btnPrimary} min-h-12 flex-1`} disabled={busy} onClick={() => void save()}>
             {t(busy ? 'Saving…' : 'Save and start')}
           </button>
         )}
@@ -192,10 +207,10 @@ function PlaceRow({ row: r, onChange, onRemove }: { row: Row; onChange: (p: Part
   }
 
   return (
-    <fieldset className="rounded-md border border-slate-300 p-3">
-      <legend className="px-1 font-semibold">{title}</legend>
+    <fieldset className="rounded-card border border-line bg-white p-4 pt-2 shadow-sh1">
+      <legend className="px-1.5 text-[15px] font-bold text-ink">{title}</legend>
       {r.kind === 'other' && (
-        <label className="block text-sm font-semibold">
+        <label className={fieldLabel}>
           {t('Name')}
           <input
             className={input}
@@ -206,13 +221,13 @@ function PlaceRow({ row: r, onChange, onRemove }: { row: Row; onChange: (p: Part
           />
         </label>
       )}
-      <label className="mt-2 block text-sm font-semibold" htmlFor={`${ids}-q`}>
+      <label className={`${fieldLabel} mt-3`} htmlFor={`${ids}-q`}>
         {t('Address')}
       </label>
-      <div className="mt-1 flex gap-2">
+      <div className="mt-1.5 flex gap-2">
         <input
           id={`${ids}-q`}
-          className={`${input} mt-0`}
+          className={`${inputCls} min-w-0 flex-1`}
           value={r.query}
           autoComplete="street-address"
           onChange={(e) => onChange({ query: e.target.value, hit: null })}
@@ -223,27 +238,27 @@ function PlaceRow({ row: r, onChange, onRemove }: { row: Row; onChange: (p: Part
             }
           }}
         />
-        <button type="button" className={btn} disabled={searching} onClick={() => void search()}>
+        <button type="button" className={`${btn} min-h-12 shrink-0`} disabled={searching} onClick={() => void search()}>
           {t('Search')}
         </button>
       </div>
-      <div aria-live="polite" className="mt-2 text-sm">
+      <div aria-live="polite" className="mt-2 text-[14px] font-medium text-ink-2">
         {searching && <p>{t('Searching…')}</p>}
         {failed && <Notice tone="error">{t('Address search is not available right now. You can skip this.')}</Notice>}
         {results && results.length === 0 && <p>{t('No match in Greater Boston. Try adding the town.')}</p>}
         {r.hit && !results && <p>{t('Saved: {place}', { place: r.hit.label })}</p>}
       </div>
       {results && results.length > 0 && (
-        <fieldset className="mt-1">
+        <fieldset className="mt-1 space-y-1.5">
           <legend className="sr-only">{t('Pick the right address')}</legend>
           {results.map((h) => (
-            <label key={`${h.lat},${h.lon}`} className="flex min-h-11 items-center gap-2 text-sm">
+            <label key={`${h.lat},${h.lon}`} className={`${option} text-[14px]`}>
               <input
                 type="radio"
                 name={`${ids}-hit`}
                 checked={r.hit?.lat === h.lat && r.hit?.lon === h.lon}
                 onChange={() => onChange({ hit: h })}
-                className="h-5 w-5"
+                className={control}
               />
               {h.label}
             </label>
@@ -251,7 +266,7 @@ function PlaceRow({ row: r, onChange, onRemove }: { row: Row; onChange: (p: Part
         </fieldset>
       )}
       {onRemove && (
-        <button type="button" className={`${btn} mt-2`} onClick={onRemove}>
+        <button type="button" className={`${btn} mt-3`} onClick={onRemove}>
           {t('Remove')}
         </button>
       )}

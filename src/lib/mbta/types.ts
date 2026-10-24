@@ -139,6 +139,8 @@ export interface Prediction {
 }
 export interface Vehicle {
   id: string;
+  /** 'bus' for MBTA buses (incl. Silver Line); subway when absent. */
+  mode?: 'subway' | 'bus';
   routeId: string;
   directionId: 0 | 1;
   lat: number;

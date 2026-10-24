@@ -6,36 +6,57 @@ import { ACCESS_EFFECTS, alertActive, alertDatesKnown, effectLabel, formatTime }
 import { useAlerts } from '@/lib/ui/hooks';
 import { AlertText, useAlertSummary, type PlainAlert } from './AlertSummary';
 import EquitySummary from './EquitySummary';
-import { Notice, SourceBadge } from './ui';
+import {
+  badge,
+  badgeBad,
+  badgeNeutral,
+  badgeWarn,
+  chip,
+  listItem,
+  mutedText,
+  Notice,
+  pageTitle,
+  sectionTitle,
+  SourceBadge,
+  statNumber,
+  statTile,
+} from './ui';
 import { useT } from '@/lib/i18n';
 
+/** Icon tile tone per effect: elevator/access red, escalator amber, other disruptions grey. */
+function effectTone(effect: string) {
+  if (effect === 'ELEVATOR_CLOSURE' || effect === 'ACCESS_ISSUE') return 'bg-bad-bg text-bad';
+  if (effect === 'ESCALATOR_CLOSURE') return 'bg-warn-bg text-warn';
+  return 'bg-soft text-ink-2';
+}
+
 function EffectIcon({ effect }: { effect: string }) {
-  const common = { width: 22, height: 22, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'shrink-0' } as const;
+  const common = { width: 20, height: 20, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'shrink-0' } as const;
   if (effect === 'ELEVATOR_CLOSURE')
     return (
       <svg {...common}>
-        <rect x="4" y="2" width="16" height="20" rx="2" fill="none" stroke="#b91c1c" strokeWidth="2" />
-        <path d="M9 9l3-3 3 3M9 15l3 3 3-3" fill="none" stroke="#b91c1c" strokeWidth="2" />
+        <rect x="4" y="2" width="16" height="20" rx="2" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M9 9l3-3 3 3M9 15l3 3 3-3" fill="none" stroke="currentColor" strokeWidth="2" />
       </svg>
     );
   if (effect === 'ESCALATOR_CLOSURE')
     return (
       <svg {...common}>
-        <path d="M3 20h5l8-12h5" fill="none" stroke="#9a3412" strokeWidth="2.5" />
+        <path d="M3 20h5l8-12h5" fill="none" stroke="currentColor" strokeWidth="2.5" />
       </svg>
     );
   if (effect === 'ACCESS_ISSUE')
     return (
       <svg {...common}>
-        <circle cx="12" cy="4" r="2" fill="#b91c1c" />
-        <path d="M12 7v6h5l2 6M12 10H8" fill="none" stroke="#b91c1c" strokeWidth="2" />
-        <circle cx="10" cy="17" r="4" fill="none" stroke="#b91c1c" strokeWidth="2" />
+        <circle cx="12" cy="4" r="2" fill="currentColor" />
+        <path d="M12 7v6h5l2 6M12 10H8" fill="none" stroke="currentColor" strokeWidth="2" />
+        <circle cx="10" cy="17" r="4" fill="none" stroke="currentColor" strokeWidth="2" />
       </svg>
     );
   return (
     <svg {...common}>
-      <path d="M12 3l10 18H2z" fill="none" stroke="#334155" strokeWidth="2" />
-      <path d="M12 10v5M12 17v1.5" stroke="#334155" strokeWidth="2" />
+      <path d="M12 3l10 18H2z" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M12 10v5M12 17v1.5" stroke="currentColor" strokeWidth="2" />
     </svg>
   );
 }
@@ -58,40 +79,46 @@ function AlertItem({
   const names = alert.stationIds.map((id) => ({ id, name: stationsById.get(id)?.name })).filter((s) => s.name);
   const t = useT();
   return (
-    <li className="rounded-md border border-slate-300 bg-white p-3">
-      <div className="flex items-start gap-2">
+    <li className={listItem}>
+      <span className={`grid size-9 shrink-0 place-items-center rounded-xl ${effectTone(alert.effect)}`}>
         <EffectIcon effect={alert.effect} />
-        <div className="min-w-0">
-          <p className="font-semibold text-slate-900">
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="flex flex-wrap items-center gap-1.5">
+          <span
+            className={`${badge} ${
+              !active ? badgeNeutral : ACCESS_EFFECTS.has(alert.effect) ? badgeBad : badgeWarn
+            }`}
+          >
             {t(effectLabel(alert.effect))}
-            {!active && <span className="font-normal text-slate-700"> ({t('not active right now')})</span>}
+          </span>
+          {!active && <span className={mutedText}> ({t('not active right now')})</span>}
+        </p>
+        {names.length > 0 && (
+          <p className="mt-0.5 text-[14px] font-medium text-ink-2">
+            {t(names.length === 1 ? 'Station:' : 'Stations:')}{' '}
+            {names.map((s, i) => (
+              <span key={s.id}>
+                {i > 0 && ', '}
+                <button
+                  type="button"
+                  className="min-h-11 text-[15px] font-bold text-ink underline decoration-line-2 underline-offset-4 transition hover:decoration-ink"
+                  onClick={() => onSelectStation(s.id)}
+                >
+                  {s.name}
+                </button>
+              </span>
+            ))}
           </p>
-          {names.length > 0 && (
-            <p className="text-sm text-slate-800">
-              {t(names.length === 1 ? 'Station:' : 'Stations:')}{' '}
-              {names.map((s, i) => (
-                <span key={s.id}>
-                  {i > 0 && ', '}
-                  <button
-                    type="button"
-                    className="min-h-11 font-semibold text-blue-800 underline underline-offset-2 hover:text-blue-950"
-                    onClick={() => onSelectStation(s.id)}
-                  >
-                    {s.name}
-                  </button>
-                </span>
-              ))}
-            </p>
-          )}
-          <AlertText summary={summary} original={alert.header || alert.shortHeader} />
-          {!datesKnown && <p className="mt-1 text-xs text-slate-700">{t('Start date not announced')}</p>}
-          {datesKnown && period && (
-            <p className="mt-1 text-xs text-slate-700">
-              {period.start && <>{t('Since {time}', { time: formatTime(period.start) })}</>}
-              {period.end && <> · {t('Until {time}', { time: formatTime(period.end) })}</>}
-            </p>
-          )}
-        </div>
+        )}
+        <AlertText summary={summary} original={alert.header || alert.shortHeader} />
+        {!datesKnown && <p className={`mt-1.5 ${mutedText}`}>{t('Start date not announced')}</p>}
+        {datesKnown && period && (
+          <p className={`mt-1.5 ${mutedText}`}>
+            {period.start && <>{t('Since {time}', { time: formatTime(period.start) })}</>}
+            {period.end && <> · {t('Until {time}', { time: formatTime(period.end) })}</>}
+          </p>
+        )}
       </div>
     </li>
   );
@@ -136,20 +163,41 @@ export default function BrokenNow({
     : '';
 
   return (
-    <section aria-labelledby="broken-h">
-      <h2 id="broken-h" className="text-lg font-bold text-slate-900">
+    <section aria-labelledby="broken-h" className="lm-in">
+      <h2 id="broken-h" className={pageTitle}>
         {t('Broken now')}
       </h2>
-      <label className="mt-2 flex min-h-11 items-center gap-2 text-sm text-slate-900">
-        <input
-          type="checkbox"
-          className="h-5 w-5"
-          checked={includeEscalators}
-          onChange={(e) => setIncludeEscalators(e.target.checked)}
-        />
-        {t('Include escalators')}
-      </label>
-      <p aria-live="polite" className="text-sm text-slate-800">
+      {/* Visual counts; the live sentence below carries the same numbers for screen readers. */}
+      {data && (
+        <div aria-hidden="true" className="mt-3 flex gap-2">
+          <div className={statTile}>
+            <p className={statNumber}>{access.length}</p>
+            <p className={`mt-1 ${mutedText}`}>{t('Access alerts')}</p>
+          </div>
+          <div className={statTile}>
+            <p className={statNumber}>{elevators}</p>
+            <p className={`mt-1 ${mutedText}`}>{t('Elevators out now')}</p>
+          </div>
+          <div className={statTile}>
+            <p className={statNumber}>{other.length}</p>
+            <p className={`mt-1 ${mutedText}`}>{t('Other disruptions')}</p>
+          </div>
+        </div>
+      )}
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          className={chip}
+          aria-pressed={includeEscalators}
+          onClick={() => setIncludeEscalators((v) => !v)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden="true">
+            {includeEscalators ? <path d="M5 12.5l4.5 4.5L19 7.5" /> : <path d="M3 20h5l8-12h5" />}
+          </svg>
+          {t('Include escalators')}
+        </button>
+      </div>
+      <p aria-live="polite" className={data && !isLoading ? 'sr-only' : 'mt-2 text-[14px] font-medium text-ink-2'}>
         {isLoading ? t('Loading live alerts…') : summary}
       </p>
       <SourceBadge source={data?.source} fetchedAt={data?.fetchedAt} />
@@ -158,7 +206,7 @@ export default function BrokenNow({
 
       {access.length > 0 && (
         <>
-          <h3 className="mt-3 font-semibold text-slate-900">{t('Elevators, escalators and access')}</h3>
+          <h3 className={`mt-5 ${sectionTitle}`}>{t('Elevators, escalators and access')}</h3>
           <ul className="mt-2 space-y-2">
             {access.map((a) => (
               <AlertItem
@@ -172,10 +220,14 @@ export default function BrokenNow({
           </ul>
         </>
       )}
-      {data && access.length === 0 && <Notice>{t('No elevator, escalator or access alerts reported right now.')}</Notice>}
+      {data && access.length === 0 && (
+        <div className="mt-3">
+          <Notice>{t('No elevator, escalator or access alerts reported right now.')}</Notice>
+        </div>
+      )}
       {other.length > 0 && (
         <>
-          <h3 className="mt-4 font-semibold text-slate-900">{t('Other subway disruptions')}</h3>
+          <h3 className={`mt-5 ${sectionTitle}`}>{t('Other subway disruptions')}</h3>
           <ul className="mt-2 space-y-2">
             {other.map((a) => (
               <AlertItem key={a.id} alert={a} stationsById={stationsById} onSelectStation={onSelectStation} />

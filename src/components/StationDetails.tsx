@@ -10,13 +10,31 @@ import {
   minutesText,
   nextTrainGroups,
   partialLines,
+  ROUTE_COLORS,
   routeName,
   stepFreeState,
   type StepFreeState,
 } from '@/lib/ui/format';
 import { useFacilities, usePredictions, useStationDetail } from '@/lib/ui/hooks';
 import { AlertText, useAlertSummary } from './AlertSummary';
-import { btn, Notice, SourceBadge, StarButton, StateIcon, StateText } from './ui';
+import {
+  badge,
+  badgeBad,
+  badgeNeutral,
+  badgeOk,
+  badgeWarn,
+  card,
+  iconBtn,
+  listItem,
+  mutedText,
+  Notice,
+  pageTitle,
+  sectionTitle,
+  SourceBadge,
+  StarButton,
+  StateIcon,
+  StateText,
+} from './ui';
 import { useT } from '@/lib/i18n';
 
 /** Street doors from /api/station/[id] (names already cleaned on the server). Absent on older servers. */
@@ -72,176 +90,234 @@ export default function StationDetails({
   const summaries = useAlertSummary();
   const stationAlerts = (d?.alerts ?? []).filter((a) => !a.informational && ACCESS_EFFECTS.has(a.effect) && alertActive(a));
 
-  return (
-    <section aria-labelledby="station-h" className="rounded-md border border-slate-400 bg-white p-3">
-      <div className="flex items-start justify-between gap-2">
-        <h2 id="station-h" ref={headingRef} tabIndex={-1} className="text-lg font-bold text-slate-900">
-          {station.name}
-        </h2>
-        <div className="flex shrink-0 gap-2">
-          {onToggleSave && <StarButton saved={!!saved} name={station.name} onToggle={onToggleSave} />}
-          <button type="button" className={btn} onClick={onClose} aria-label={tr('Close {name} details', { name: station.name })}>
-            {tr('Close')}
-          </button>
-        </div>
+  const stateTone: Record<StepFreeState, string> = {
+    yes: badgeOk,
+    partial: badgeWarn,
+    no: badgeBad,
+    unknown: badgeNeutral,
+  };
+  const facilityRow = (f: (typeof lifts)[number]) => (
+    <li key={f.id} className={listItem}>
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-bold text-ink">{f.shortName ?? f.name}</p>
+        <p className={mutedText}>{tr(facilityTypeWord(f.type))}</p>
+        {f.closed && f.alternateServiceText && (
+          <p className="mt-1 text-[13px] font-medium text-ink-2">
+            {tr('MBTA suggests:')} {f.alternateServiceText}
+          </p>
+        )}
       </div>
-      <p className="text-sm text-slate-700">{station.routes.map(routeName).join(', ')}</p>
+      <span className={`${badge} ${f.closed ? badgeBad : badgeOk}`}>
+        <span aria-hidden="true">{f.closed ? '✕' : '✓'}</span>
+        {tr(f.closed ? 'Out of service' : 'Working')}
+      </span>
+    </li>
+  );
+  const bodyText = 'text-[14px] font-medium text-ink-2';
 
-      <div className="mt-2 text-base font-semibold text-slate-900">
-        <StateText state={state} />
+  return (
+    <section aria-labelledby="station-h" className="lm-in space-y-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h2 id="station-h" ref={headingRef} tabIndex={-1} className={`${pageTitle} outline-none`}>
+            {station.name}
+          </h2>
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {station.routes.map((r) => (
+              <span key={r} className={`${badge} ${badgeNeutral}`}>
+                <span
+                  aria-hidden="true"
+                  className="size-2.5 shrink-0 rounded-full"
+                  style={{ background: ROUTE_COLORS[r] ?? 'var(--muted)' }}
+                />
+                {routeName(r)}
+              </span>
+            ))}
+          </div>
+        </div>
+        <button
+          type="button"
+          className={iconBtn}
+          onClick={onClose}
+          aria-label={tr('Close {name} details', { name: station.name })}
+          title={tr('Close')}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className={`${badge} ${stateTone[state]}`}>
+          <StateText state={state} />
+        </span>
+        {onToggleSave && <StarButton saved={!!saved} name={station.name} onToggle={onToggleSave} />}
       </div>
       {state === 'no' && blockedBy.length > 0 && (
-        <p className="text-sm text-slate-800">
+        <p className={bodyText}>
           {tr(blockedBy.length === 1 ? 'Because this is out of service: {list}' : 'Because these are out of service: {list}', {
             list: blockedBy.map(facilityName).join('; '),
           })}
         </p>
       )}
       {state === 'no' && blockedBy.length === 0 && (
-        <p className="text-sm text-slate-800">{tr('This station has no step-free route between the street and its platforms.')}</p>
+        <p className={bodyText}>{tr('This station has no step-free route between the street and its platforms.')}</p>
       )}
       {state === 'partial' && (
-        <ul className="text-sm text-slate-800">
+        <ul className={`${bodyText} space-y-0.5`}>
           {partialLines(blockedPlatforms, blockedBy, facilityName).map((line) => (
             <li key={line}>{line}</li>
           ))}
         </ul>
       )}
       {(d?.status.approximate ?? live?.approximate) && (
-        <p className="text-sm text-slate-700">{tr('Based on the MBTA station flag (no detailed elevator map).')}</p>
+        <p className={mutedText}>{tr('Based on the MBTA station flag (no detailed elevator map).')}</p>
       )}
       <SourceBadge source={detail.data?.source} fetchedAt={detail.data?.fetchedAt} />
       {detail.error && !d && <Notice tone="error">{tr('Live station details are not available right now.')}</Notice>}
 
       {lifts.length > 0 && (
-        <>
+        <div className={card}>
           {/* Out-of-service equipment stays in view; the full list is folded because the map shows it. */}
           {lifts.some((f) => f.closed) && (
             <>
-              <h3 className="mt-3 font-semibold text-slate-900">{tr('Out of service here')}</h3>
-              <ul className="mt-1 space-y-1 text-sm">
-                {lifts.filter((f) => f.closed).map((f) => (
-              <li key={f.id} className="flex items-start gap-2 text-slate-900">
-                <span aria-hidden="true" className={f.closed ? 'font-bold text-red-700' : 'font-bold text-emerald-800'}>
-                  {f.closed ? '✕' : '✓'}
-                </span>
-                <span>
-                  <strong>{tr(f.closed ? 'Out of service' : 'Working')}</strong> ({tr(facilityTypeWord(f.type))}): {f.shortName ?? f.name}
-                  {f.closed && f.alternateServiceText && (
-                    <span className="mt-0.5 block text-slate-800">{tr('MBTA suggests:')} {f.alternateServiceText}</span>
-                  )}
-                </span>
-              </li>
-                ))}
-              </ul>
+              <h3 className={sectionTitle}>{tr('Out of service here')}</h3>
+              <ul className="mt-2 space-y-2">{lifts.filter((f) => f.closed).map((f) => facilityRow(f))}</ul>
             </>
           )}
-          <details className="mt-3">
-            <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-slate-900">
+          <details className={lifts.some((f) => f.closed) ? 'mt-2' : ''}>
+            <summary className="flex min-h-11 cursor-pointer items-center text-[15px] font-bold text-ink">
               {tr('All elevators and lifts here ({n}), also on the map', { n: lifts.length })}
             </summary>
-            <ul className="mt-1 space-y-1 text-sm">
-              {lifts.map((f) => (
-              <li key={f.id} className="flex items-start gap-2 text-slate-900">
-                <span aria-hidden="true" className={f.closed ? 'font-bold text-red-700' : 'font-bold text-emerald-800'}>
-                  {f.closed ? '✕' : '✓'}
-                </span>
-                <span>
-                  <strong>{tr(f.closed ? 'Out of service' : 'Working')}</strong> ({tr(facilityTypeWord(f.type))}): {f.shortName ?? f.name}
-                  {f.closed && f.alternateServiceText && (
-                    <span className="mt-0.5 block text-slate-800">{tr('MBTA suggests:')} {f.alternateServiceText}</span>
-                  )}
-                </span>
-              </li>
-              ))}
-            </ul>
+            <ul className="mt-2 space-y-2">{lifts.map((f) => facilityRow(f))}</ul>
           </details>
-        </>
-      )}
-
-      {stationAlerts.length > 0 && (
-        <>
-          <h3 className="mt-3 font-semibold text-slate-900">{tr('Accessibility alerts here')}</h3>
-          <ul className="mt-1 space-y-2">
-            {stationAlerts.map((a) => (
-              <li key={a.id} className="flex items-start gap-1.5 text-sm text-slate-900">
-                <span aria-hidden="true">⚠</span>
-                <div className="min-w-0">
-                  <p className="font-semibold">{tr(effectLabel(a.effect))}</p>
-                  <AlertText summary={summaries.get(a.id)} original={a.header || a.shortHeader} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
+        </div>
       )}
 
       {entrances.length > 0 && (
-        <>
-          <h3 className="mt-3 font-semibold text-slate-900">{tr('Which door to use')}</h3>
-          <ul className="mt-1 space-y-1 text-sm text-slate-900">
+        <div className={card}>
+          <h3 className={sectionTitle}>{tr('Which door to use')}</h3>
+          <ul className="mt-2 space-y-2">
             {entrances.map((e) => (
-              <li key={e.id} className="flex items-start gap-2">
-                <StateIcon state={e.stepFree ? 'yes' : 'no'} />
-                <span>
-                  {e.name}: <strong>{tr(e.stepFree ? 'step-free' : 'stairs or escalator only')}</strong>
+              <li key={e.id} className={listItem}>
+                <span className="min-w-0 flex-1 text-[15px] font-bold text-ink">
+                  {e.name}
+                  <span className="sr-only">:</span>
+                </span>
+                <span className={`${badge} ${e.stepFree ? badgeOk : badgeBad}`}>
+                  <StateIcon state={e.stepFree ? 'yes' : 'no'} size={14} />
+                  {tr(e.stepFree ? 'step-free' : 'stairs or escalator only')}
                 </span>
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs text-slate-700">{tr('Step-free means there is a working elevator or ramp path from this door right now.')}</p>
-        </>
+          <p className={`mt-2 ${mutedText}`}>
+            {tr('Step-free means there is a working elevator or ramp path from this door right now.')}
+          </p>
+        </div>
       )}
       {escalators.some((f) => f.closed) && (
-        <p className="mt-2 text-sm text-slate-800">
+        <p className={`rounded-2xl bg-soft px-3.5 py-2.5 ${bodyText}`}>
           {tr('Escalators out of service: {list}', {
             list: escalators.filter((f) => f.closed).map((f) => f.shortName ?? f.name).join('; '),
           })}
         </p>
       )}
 
+      <div className={card}>
+        <h3 className={sectionTitle}>{tr('Next trains')}</h3>
+        {preds.error && !preds.data && <p className={`mt-2 ${bodyText}`}>{tr('Next trains are not available right now.')}</p>}
+        {preds.data && demoEmpty && <p className={`mt-2 ${bodyText}`}>{tr('Live train times unavailable right now.')}</p>}
+        {preds.data && !demoEmpty && groups.length === 0 && (
+          <p className={`mt-2 ${bodyText}`}>{tr('No upcoming trains listed.')}</p>
+        )}
+        {!preds.data && !preds.error && <p className={`mt-2 ${bodyText}`}>{tr('Loading next trains…')}</p>}
+        <ul className="mt-2 space-y-2 empty:hidden">
+          {groups.map((g) => {
+            const heads = [...new Set(g.trains.map((t) => t.headsign ?? ''))];
+            const sameHead = heads.length === 1;
+            return (
+              <li key={g.key} className={listItem}>
+                <span
+                  aria-hidden="true"
+                  className="w-1.5 shrink-0 self-stretch rounded-full"
+                  style={{ background: ROUTE_COLORS[g.routeId] ?? 'var(--muted)' }}
+                />
+                {/* DOM order reads "Red Line, to Alewife"; shown with the headsign on top. */}
+                <div className="flex min-w-0 flex-1 flex-col-reverse">
+                  {sameHead && heads[0] ? (
+                    <>
+                      <p className={mutedText}>{routeName(g.routeId)}</p>
+                      <p className="text-[15px] font-bold text-ink">{tr('to {headsign}', { headsign: heads[0] })}</p>
+                    </>
+                  ) : (
+                    <p className="text-[15px] font-bold text-ink">{routeName(g.routeId)}</p>
+                  )}
+                </div>
+                <p className="flex shrink-0 flex-col items-end text-right">
+                  <span className="sr-only">: </span>
+                  {g.trains.map((t, i) => (
+                    <span key={`${t.platformId}-${t.time}-${i}`} className="text-[18px] font-extrabold leading-tight text-ink">
+                      {i > 0 && <span className="sr-only">{sameHead ? ', ' : ' · '}</span>}
+                      {!sameHead && t.headsign ? (
+                        <span className="mr-1.5 text-[13px] font-semibold text-muted">{t.headsign}</span>
+                      ) : null}
+                      {mins(t)}
+                    </span>
+                  ))}
+                </p>
+              </li>
+            );
+          })}
+        </ul>
+      </div>
+
       {d && d.parking.length > 0 && (
-        <>
-          <h3 className="mt-3 font-semibold text-slate-900">{tr('Parking')}</h3>
-          <ul className="mt-1 space-y-1 text-sm text-slate-900">
+        <div className={card}>
+          <h3 className={sectionTitle}>{tr('Parking')}</h3>
+          <ul className="mt-2 space-y-2">
             {d.parking.map((p) => (
-              <li key={p.id}>
-                {p.name}: {tr('{n} accessible spaces', { n: p.accessibleSpaces ?? tr('unknown') })}
-                {p.capacity != null && ` ${tr('of {n} total', { n: p.capacity })}`}
-                {p.feeDaily && ` · ${p.feeDaily}`}
-                <span className="block text-xs text-slate-700">{tr('No live occupancy data.')}</span>
+              <li key={p.id} className={listItem}>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-bold text-ink">
+                    {p.name}
+                    <span className="sr-only">:</span>
+                  </p>
+                  <p className={bodyText}>
+                    {tr('{n} accessible spaces', { n: p.accessibleSpaces ?? tr('unknown') })}
+                    {p.capacity != null && ` ${tr('of {n} total', { n: p.capacity })}`}
+                    {p.feeDaily && ` · ${p.feeDaily}`}
+                  </p>
+                  <p className={mutedText}>{tr('No live occupancy data.')}</p>
+                </div>
               </li>
             ))}
           </ul>
-        </>
+        </div>
       )}
 
-      <h3 className="mt-3 font-semibold text-slate-900">{tr('Next trains')}</h3>
-      {preds.error && !preds.data && <p className="text-sm text-slate-800">{tr('Next trains are not available right now.')}</p>}
-      {preds.data && demoEmpty && <p className="text-sm text-slate-800">{tr('Live train times unavailable right now.')}</p>}
-      {preds.data && !demoEmpty && groups.length === 0 && (
-        <p className="text-sm text-slate-800">{tr('No upcoming trains listed.')}</p>
-      )}
-      {!preds.data && !preds.error && <p className="text-sm text-slate-800">{tr('Loading next trains…')}</p>}
-      <ul className="mt-1 space-y-1 text-sm text-slate-900">
-        {groups.map((g) => {
-          const heads = [...new Set(g.trains.map((t) => t.headsign ?? ''))];
-          const sameHead = heads.length === 1;
-          return (
-            <li key={g.key}>
-              {routeName(g.routeId)}
-              {sameHead && heads[0] ? ` ${tr('to {headsign}', { headsign: heads[0] })}` : ''}:{' '}
-              {g.trains.map((t, i) => (
-                <span key={`${t.platformId}-${t.time}-${i}`}>
-                  {i > 0 && (sameHead ? ', ' : ' · ')}
-                  {!sameHead && t.headsign ? `${t.headsign} ` : ''}
-                  <strong>{mins(t)}</strong>
+      {stationAlerts.length > 0 && (
+        <div className={card}>
+          <h3 className={sectionTitle}>{tr('Accessibility alerts here')}</h3>
+          <ul className="mt-2 space-y-2">
+            {stationAlerts.map((a) => (
+              <li key={a.id} className={listItem}>
+                <span
+                  aria-hidden="true"
+                  className="grid size-9 shrink-0 place-items-center rounded-xl bg-bad-bg text-[16px] font-bold text-bad"
+                >
+                  ⚠
                 </span>
-              ))}
-            </li>
-          );
-        })}
-      </ul>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-bold text-ink">{tr(effectLabel(a.effect))}</p>
+                  <AlertText summary={summaries.get(a.id)} original={a.header || a.shortHeader} />
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
   );
 }

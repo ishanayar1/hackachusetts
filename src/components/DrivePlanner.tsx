@@ -5,13 +5,18 @@ import { useT } from '@/lib/i18n';
 import type { ParkingLot, Station } from '@/lib/ui/api';
 import { useDrive, useStaticFile } from '@/lib/ui/hooks';
 import { DEMO_DESTINATIONS, DEMO_PLACE, formatDistance, getMyLocation, type LatLon, type Place } from '@/lib/ui/walk';
-import { btn, btnPrimary, Notice, SourceBadge } from './ui';
+import { badge, badgeNeutral, btn, btnPrimary, card, input, mutedText, Notice, pageTitle, sectionTitle, SourceBadge, statNumber } from './ui';
 
 type StartMode = 'saved' | 'here' | 'demo';
 type Goal = 'place' | 'park';
 type Query = { from: Place; to: LatLon; toText: string; stationId?: string; lot?: ParkingLot };
 
-const select = 'mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900';
+const select = `mt-1.5 ${input} cursor-pointer`;
+const fieldLabel = 'block text-[14px] font-bold text-ink';
+/** Radio option as a pill row; the checked one gets an ink outline. */
+const option =
+  'flex min-h-11 cursor-pointer items-center gap-2.5 rounded-full border border-line bg-white px-3.5 text-[14px] font-bold text-ink shadow-sh1 transition duration-200 hover:border-line-2 has-checked:border-ink has-checked:ring-1 has-checked:ring-ink';
+const radio = 'size-4 shrink-0 accent-[#16181D]';
 const mins = (m: number) => Math.max(1, Math.round(m));
 
 type Props = {
@@ -84,12 +89,12 @@ export default function DrivePlanner({ stations, places, onDrive, onPlanTrain }:
 
   return (
     <section aria-labelledby={`${ids}-h`}>
-      <h2 id={`${ids}-h`} className="text-lg font-bold text-slate-900">
+      <h2 id={`${ids}-h`} className={pageTitle}>
         {t('Drive')}
       </h2>
-      <form onSubmit={submit} className="mt-2 space-y-3">
-        <fieldset>
-          <legend className="text-sm font-semibold text-slate-900">{t('Start from')}</legend>
+      <form onSubmit={submit} className="mt-3 space-y-4">
+        <fieldset className="space-y-2">
+          <legend className={`${fieldLabel} mb-2`}>{t('Start from')}</legend>
           {(
             [
               ['saved', 'One of my places'],
@@ -99,13 +104,13 @@ export default function DrivePlanner({ stations, places, onDrive, onPlanTrain }:
           )
             .filter(([m]) => m !== 'saved' || places.length > 0)
             .map(([m, label]) => (
-              <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
+              <label key={m} className={option}>
                 <input
                   type="radio"
                   name={`${ids}-start`}
                   checked={startMode === m}
                   onChange={() => void chooseStart(m)}
-                  className="h-5 w-5"
+                  className={radio}
                 />
                 {t(label)}
               </label>
@@ -127,21 +132,21 @@ export default function DrivePlanner({ stations, places, onDrive, onPlanTrain }:
           {locError && <Notice tone="error">{locError}</Notice>}
         </fieldset>
 
-        <fieldset>
-          <legend className="text-sm font-semibold text-slate-900">{t('Trip')}</legend>
+        <fieldset className="space-y-2">
+          <legend className={`${fieldLabel} mb-2`}>{t('Trip')}</legend>
           {(
             [
               ['place', 'Drive all the way'],
               ['park', 'Park at a station and take the T'],
             ] as [Goal, string][]
           ).map(([g, label]) => (
-            <label key={g} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
+            <label key={g} className={option}>
               <input
                 type="radio"
                 name={`${ids}-goal`}
                 checked={goal === g}
                 onChange={() => setGoal(g)}
-                className="h-5 w-5"
+                className={radio}
               />
               {t(label)}
             </label>
@@ -150,7 +155,7 @@ export default function DrivePlanner({ stations, places, onDrive, onPlanTrain }:
 
         {goal === 'place' ? (
           <div>
-            <label htmlFor={`${ids}-dest`} className="block text-sm font-semibold text-slate-900">
+            <label htmlFor={`${ids}-dest`} className={fieldLabel}>
               {t('Going to')}
             </label>
             <select id={`${ids}-dest`} value={destLabel} onChange={(e) => setDestLabel(e.target.value)} className={select}>
@@ -175,7 +180,7 @@ export default function DrivePlanner({ stations, places, onDrive, onPlanTrain }:
           </div>
         ) : (
           <div>
-            <label htmlFor={`${ids}-lot`} className="block text-sm font-semibold text-slate-900">
+            <label htmlFor={`${ids}-lot`} className={fieldLabel}>
               {t('Park at (stations with accessible parking)')}
             </label>
             <select id={`${ids}-lot`} value={lotId} onChange={(e) => setLotId(e.target.value)} className={select}>
@@ -200,63 +205,94 @@ export default function DrivePlanner({ stations, places, onDrive, onPlanTrain }:
       </form>
 
       <div aria-live="polite" className="mt-3">
-        {query && drive.isLoading && <p className="text-sm text-slate-800">{t('Finding a driving route…')}</p>}
+        {query && drive.isLoading && (
+          <div className="space-y-2">
+            <div className="lm-shimmer h-28 rounded-card" aria-hidden="true" />
+            <p className={mutedText}>{t('Finding a driving route…')}</p>
+          </div>
+        )}
         {query && drive.error && <Notice tone="error">{t('Driving directions are not available right now.')}</Notice>}
       </div>
 
       {query && result && (
-        <section className="mt-3 rounded-md border border-slate-500 bg-white p-3 text-slate-900">
-          <h3 className="font-bold">{t('Drive to {place}', { place: query.toText })}</h3>
-          <p className="text-sm">
+        <section className={`${card} lm-in mt-3 text-ink`}>
+          <h3 className={sectionTitle}>{t('Drive to {place}', { place: query.toText })}</h3>
+          <div className="mt-3 flex items-end gap-2" aria-hidden="true">
+            <span className={statNumber}>{mins(result.minutes)}</span>
+            <span className="pb-0.5 text-[14px] font-bold text-muted">{t('min')}</span>
+            <span className={`${badge} ${badgeNeutral} ml-auto`}>{formatDistance(result.distanceM)}</span>
+          </div>
+          <p className="mt-2 text-[14px] font-medium leading-relaxed text-ink-2">
             {t('About {min} min, {dist}.', { min: mins(result.minutes), dist: formatDistance(result.distanceM) })}{' '}
             {result.approximate && t('Straight-line estimate: road routing is not available right now.')}
           </p>
           <SourceBadge source={drive.data?.source} fetchedAt={drive.data?.fetchedAt} />
-          <details className="mt-2">
-            <summary className="flex min-h-11 cursor-pointer items-center text-sm font-semibold">
+          <details className="group mt-3">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 rounded-full bg-soft px-4 text-[14px] font-bold text-ink transition duration-200 hover:bg-soft-2 [&::-webkit-details-marker]:hidden">
               {t('Turn-by-turn ({n} steps)', { n: result.steps.length })}
+              <svg viewBox="0 0 16 16" className="size-4 transition-transform duration-200 group-open:rotate-180" aria-hidden="true">
+                <path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </summary>
-            <ol className="ml-5 list-decimal space-y-1 text-sm">
+            <ol className="mt-2 space-y-1.5">
               {result.steps.map((s, i) => (
-                <li key={i}>
-                  {s.instruction} {s.distanceM > 0 && <span className="text-slate-700">({formatDistance(s.distanceM)})</span>}
+                <li key={i} className="flex items-start gap-3 rounded-[18px] border border-line bg-white p-3 text-[14px] font-medium text-ink">
+                  <span
+                    aria-hidden="true"
+                    className="grid size-[26px] shrink-0 place-items-center rounded-full bg-soft-2 text-[13px] font-bold text-ink"
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="min-w-0 flex-1 pt-0.5">
+                    {s.instruction} {s.distanceM > 0 && <span className="text-muted">({formatDistance(s.distanceM)})</span>}
+                  </span>
                 </li>
               ))}
             </ol>
           </details>
 
           {query.lot && query.stationId ? (
-            <div className="mt-2 space-y-2 text-sm">
-              <p>
+            <div className="mt-3 space-y-3 text-[14px] text-ink-2">
+              <p className="rounded-[18px] border border-line bg-soft p-3.5 font-medium">
                 {t('{lot}: {n} accessible spaces.', { lot: query.lot.name, n: query.lot.accessibleSpaces ?? 0 })}
                 {query.lot.feeDaily && ` ${t('Daily fee: {fee}', { fee: query.lot.feeDaily.trim() })}`}
               </p>
-              <button type="button" className={btn} onClick={() => onPlanTrain(query.stationId!)}>
+              <button type="button" className={`${btn} h-auto w-full py-2.5 text-center leading-snug`} onClick={() => onPlanTrain(query.stationId!)}>
                 {t('Plan the step-free train from {station}', { station: stationName(query.stationId) })}
               </button>
             </div>
           ) : (
-            <div className="mt-2 text-sm">
-              <h4 className="font-semibold">{t('Accessible parking near {place}', { place: query.toText })}</h4>
+            <div className="mt-4 text-[14px]">
+              <h4 className="text-[15px] font-bold text-ink">{t('Accessible parking near {place}', { place: query.toText })}</h4>
               {result.parking.length ? (
-                <ul className="mt-1 space-y-1">
+                <ul className="mt-2 space-y-1.5">
                   {result.parking.map((l) => (
-                    <li key={l.id}>
+                    <li key={l.id} className="flex items-start gap-3 rounded-[18px] border border-line bg-white p-3 font-medium text-ink-2 shadow-sh1">
+                      <span
+                        aria-hidden="true"
+                        className="grid size-[26px] shrink-0 place-items-center rounded-lg bg-t-blue text-[13px] font-extrabold text-white"
+                      >
+                        P
+                      </span>
+                      <span className="min-w-0 flex-1 pt-0.5">
                       {t('{lot} ({station}): {n} accessible spaces, {dist} away', {
                         lot: l.name,
                         station: stationName(l.stationId),
                         n: l.accessibleSpaces ?? 0,
                         dist: formatDistance(l.distanceM),
                       })}
+                      </span>
                     </li>
                   ))}
                 </ul>
               ) : (
-                <p>{t('No MBTA lots with accessible spaces near here. Check street parking signs on arrival.')}</p>
+                <p className="mt-2 rounded-[18px] border border-line bg-soft p-3.5 font-medium text-ink-2">
+                  {t('No MBTA lots with accessible spaces near here. Check street parking signs on arrival.')}
+                </p>
               )}
             </div>
           )}
-          <p className="mt-2 text-xs text-slate-700">{t('Driving times are estimates without live traffic.')}</p>
+          <p className={`mt-3 ${mutedText}`}>{t('Driving times are estimates without live traffic.')}</p>
         </section>
       )}
     </section>

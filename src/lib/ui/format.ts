@@ -251,11 +251,11 @@ export const MODEL_BINS = [
   { min: 2, label: '2 or more a year', color: '#dc2626' },
 ];
 
-/** The map opens on the model estimate, without the low-risk bin and with every optional layer off. */
-export const DEFAULT_CRASH_MODE: CrashMode = 'model';
+/** The map opens clean: crash layer off (one tap away in Layers), live trains on. */
+export const DEFAULT_CRASH_MODE: CrashMode = 'off';
 export const MODEL_MIN_SHOWN = MODEL_BINS[1].min;
 export const DEFAULT_LAYERS: MapLayerToggles = {
-  trains: false,
+  trains: true,
   fatal: false,
   danger: false,
   equity: false,
