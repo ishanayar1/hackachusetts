@@ -167,6 +167,23 @@ describe.skipIf(!built)('static GTFS data', () => {
     expect(dtxPark?.minutes).toBe(2);
   });
 
+  it('headways are real weekday daytime medians for every route and direction', () => {
+    const hw = (network as Network & { headways?: Record<string, { 0: number; 1: number }> }).headways;
+    expect(hw).toBeDefined();
+    for (const r of SUBWAY_ROUTES) {
+      for (const d of [0, 1] as const) {
+        const h = hw![r]?.[d];
+        expect(typeof h, `${r}/${d}`).toBe('number');
+        expect(h, `${r}/${d}`).toBeGreaterThanOrEqual(2);
+        expect(h, `${r}/${d}`).toBeLessThanOrEqual(20);
+      }
+    }
+    // Fall 2026 feed (weekday 07:00-19:00): Red/Orange/Blue 5 min, Green branches 8, Mattapan 7.
+    expect(hw!.Red[0]).toBeLessThanOrEqual(7);
+    for (const g of ['Green-B', 'Green-C', 'Green-D', 'Green-E']) expect(hw![g][0], g).toBeGreaterThanOrEqual(5);
+    expect(hw!.Mattapan[0]).toBeGreaterThanOrEqual(5);
+  });
+
   it('parking lots and line shapes are well formed', () => {
     expect(parking.length).toBeGreaterThan(0);
     for (const p of parking) expect(stationIds.has(p.stationId), p.id).toBe(true);
