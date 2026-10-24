@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lastmile-mbta": {
+      "command": "npx",
+      "args": ["tsx", "--env-file=.env", "mcp/mbta/server.ts"]
+    }
+  }
+}

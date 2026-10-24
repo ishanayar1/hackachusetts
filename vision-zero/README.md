@@ -23,4 +23,4 @@ Check the source license before publishing a project.
 ---
 
 The crash-risk prediction model and web app built on this dataset live in the
-sibling `../app/` folder. See `../app/README.md`.
+sibling `../crash-risk/` folder. See `../crash-risk/README.md`.
