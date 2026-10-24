@@ -14,10 +14,13 @@
     "mcp": "tsx --env-file=.env mcp/mbta/server.ts"
   },
   "dependencies": {
+    "maplibre-gl": "^6.15.0",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "server-only": "^0.0.1"
+    "react-map-gl": "^8.1.3",
+    "server-only": "^0.0.1",
+    "swr": "^2.5.1"
   },
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
