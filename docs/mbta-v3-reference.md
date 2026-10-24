@@ -12,15 +12,15 @@ Base URL: `https://api-v3.mbta.com`. Every endpoint is GET only and returns JSON
 - Every MBTA call goes through our Next.js route handlers (`src/app/api/*/route.ts`). Browsers never call MBTA directly.
 - Put the API key in the server env var `MBTA_API_KEY` and send it as the `x-api-key` header.
 - Without a key, the limit is 20 requests/min per IP, shared by the whole hackathon wifi. A free key gives 1,000/min **(docs)**.
-- Anything static (stations, elevators, pathways, routes, shapes) comes from GTFS static at build time. The live API is only for alerts, vehicles and predictions.
+- Anything static (stations, elevators, pathways, routes, shapes) comes from GTFS static at build time. The live API is used for alerts first; predictions and vehicles only if time allows.
 
 **The 6 endpoints we actually need**
 
 | # | Endpoint | Why |
 |---|---|---|
 | 1 | `/alerts` | Broken elevators and escalators, shuttles, suspensions, closures |
-| 2 | `/vehicles` | Live train map |
-| 3 | `/predictions` | "Next 3 trains" |
+| 2 | `/vehicles` | Live train map (last priority) |
+| 3 | `/predictions` | "Next 3 trains" (Should) |
 | 4 | `/facilities` | Elevator names and ids, to join with alerts (or use GTFS `facilities.txt`) |
 | 5 | `/stops` | Station list, step-free flags, entrances (or use GTFS `stops.txt`) |
 | 6 | `/route_patterns` + `/shapes` / `/routes` | Station graph, line geometry, colors (build time only) |
@@ -33,8 +33,8 @@ Base URL: `https://api-v3.mbta.com`. Every endpoint is GET only and returns JSON
 | What's broken feed | `GET /alerts?filter[route_type]=0,1&filter[activity]=ALL&include=facilities,stops&sort=-severity` | 30 s |
 | Step-free router | Same alerts snapshot (read the closed elevator facility ids from it) plus the bundled GTFS pathways graph | 30 s |
 | Station detail / next trains | `GET /predictions?filter[stop]=place-XXX&include=trip&fields[trip]=headsign&sort=departure_time` | 15-20 s |
-| My stations | The same predictions call with `filter[stop]=place-A,place-B,...` (1 call) | 15-20 s |
-| Crash risk layer | No API call. It reads a static precomputed JSON. | build time |
+| My stations | The same cached alerts snapshot, filtered to the saved stations (no extra call). Optional: one predictions call with `filter[stop]=place-A,place-B,...` | 30 s |
+| Crash history layer | No API call. It reads a static precomputed JSON. | build time |
 
 ---
 
@@ -130,6 +130,8 @@ alert.effect == "ELEVATOR_CLOSURE"
 3. Router: remove GTFS `pathways.txt` rows with `pathway_mode=5` and `facility_id` in `closedElevatorIds`. Elevators are directed (`is_bidirectional=0`), so **each one appears as two rows. Remove both.**
 4. The included facility's `properties[]` has `alternate-service-text`, which can be shown as a reroute hint, and `excludes-stop`, which lists platforms the elevator does **not** serve.
 
+**Beyond elevators (design):** step-free access also depends on `RAMP`, `PORTABLE_BOARDING_LIFT` and `BRIDGE_PLATE` facilities (Green Line surface stops, Mattapan). Treat an alert with effect `ACCESS_ISSUE` on a station as "check before you go" (2 were active on 2026-10-24, for example a mini-high platform out of service). Escalator closures do not block wheelchair routes; show them under a toggle for cane and luggage users.
+
 **Other alert behavior:**
 - `/alerts/{id}` returns the same shape as a list item. A bogus id returns 404 `not_found`. Whether a *closed* alert also returns 404 is **UNVERIFIED**. Treat a 404 as "resolved".
 - The `relationships` object contains only the types you asked for in `include`.
@@ -139,7 +141,7 @@ alert.effect == "ELEVATOR_CLOSURE"
 **Facilities**
 - `/facilities` is static and has **no up/down status**. Live outages come only from alerts.
 - Type enum (API, UPPER_SNAKE): BIKE_STORAGE, BRIDGE_PLATE, ELECTRIC_CAR_CHARGERS, ELEVATED_SUBPLATFORM, ELEVATOR, ESCALATOR, FARE_MEDIA_ASSISTANCE_FACILITY, FARE_MEDIA_ASSISTANT, FARE_VENDING_MACHINE, FARE_VENDING_RETAILER, FULLY_ELEVATED_PLATFORM, OTHER, PARKING_AREA, PICK_DROP, PORTABLE_BOARDING_LIFT, RAMP, TAXI_STAND, TICKET_WINDOW. GTFS uses lower-kebab (`elevator`, `parking-area`), so normalize.
-- Startup call: `/facilities?filter[type]=ELEVATOR,ESCALATOR,PORTABLE_BOARDING_LIFT&filter[stop]=<subway parents>`. The whole system has 237 elevators (667 KB). TTL 24 h.
+- Startup call: page through `/facilities?filter[type]=ELEVATOR,ESCALATOR,PORTABLE_BOARDING_LIFT,RAMP,BRIDGE_PLATE&filter[stop]=<subway parents>` with `page[limit]` and `page[offset]`. A single request capped at 1,000 rows gives wrong totals. Paged system totals **(live)**: 237 elevators, 183 escalators, 58 ramps, 56 portable boarding lifts, 169 parking areas. TTL 24 h.
 - Attributes:
   - `long_name`, e.g. "Lansdowne Elevator 990 (...)".
   - `short_name`.
@@ -251,7 +253,7 @@ alert.effect == "ELEVATOR_CLOSURE"
 | Train positions | none | **`/vehicles`** (10-15 s) | `VehiclePositions_enhanced.json` |
 | Arrival predictions | none | **`/predictions`** (15-20 s) | `TripUpdates_enhanced.json` (structure UNVERIFIED) |
 | Timetable fallback | `stop_times.txt` | `/schedules` | none |
-| Crash history and risk | Precomputed static JSON from the Vision Zero CSV | none | none |
+| Crash history | Precomputed static JSON from the Vision Zero CSV | none | none |
 
 **GTFS facts (verified on `MBTA_GTFS.zip`, 22.3 MB)**
 
@@ -273,7 +275,7 @@ alert.effect == "ELEVATOR_CLOSURE"
 
 *Routing fields*
 - Elevator edge cost: use `wheelchair_traversal_time` or `traversal_time`. Elevator rows have no length; only walkways have `wheelchair_length`.
-- Wheelchair routing: exclude modes 2 (stairs) and 4 (escalators).
+- Wheelchair routing: allow modes 1 (walkway), 5 (elevator), 6 (fare gate) and 7 (exit gate); exclude 2 (stairs) and 4 (escalators). Mode 3 (moving walkway) does not appear in the counts above; check before relying on it.
 
 *Coverage gaps*
 - 185 of the 188 subway-station elevators have a pathway row. The exceptions are 805 and 729 (`place-brntn`) and 730 (`place-qamnl`).
@@ -329,20 +331,23 @@ The CDN's own `effect` is coarse: an elevator closure shows as `ACCESSIBILITY_IS
 - Store it in `MBTA_API_KEY` in `.env.local` (gitignored) and in the hosting provider's env settings. **Never commit it to the public repo, and never put it in client code.** V3 allows CORS `*`, so a key in browser code is effectively public.
 - Prefer the `x-api-key` header over `?api_key=` so the key stays out of URLs and logs.
 
-**Request budget (design, arithmetic from the TTLs below)**
+**The cache must be shared across server instances (design)**
 
-The server cache plus in-flight coalescing make upstream calls **independent of the number of users N**:
+An in-memory `Map` at module level is private to one server instance. On serverless hosting (for example Vercel functions) each instance has its own copy, so it cannot guarantee "one upstream call no matter how many users". Pick one:
+- Next.js `fetch(url, { next: { revalidate: N } })`, which uses the framework's shared server cache (documented behavior; verify it on your host).
+- A small KV store (Upstash, Vercel KV) holding the last response and its `fetchedAt`.
+- One long-lived server (a container or VM), where an in-memory cache is fine.
+
+With a key (1,000/min) every option is comfortable. Without a key (20/min), only a truly shared cache keeps you under the limit.
+
+**Request budget (design, arithmetic from the TTLs below)**
 
 | Feed | TTL | Upstream calls/min |
 |---|---|---|
-| Vehicles | 15 s | 4 |
 | Alerts | 30 s | 2 |
-| Predictions | 20 s | 3 per distinct station being viewed (S) |
-| **Total** | | **about 6 + 3·S per minute** |
-
-- Without a key (20/min), that covers only about 4 distinct stations at once. Get the key.
-- With a key (1,000/min), it covers more than 300 stations.
-- Without the proxy, the cost becomes N × (per-client calls), and it hits 429 almost immediately.
+| Predictions (Should) | 20 s | 3 per distinct station being viewed (S) |
+| Vehicles (last priority) | 15 s | 4 |
+| **Total** | | **about 2 + 3·S per minute, plus 4 if the train map is on** |
 
 **Server-side cache TTLs**
 
@@ -356,99 +361,60 @@ The server cache plus in-flight coalescing make upstream calls **independent of 
 | `/route_patterns` (shuttle check) | 1 h |
 | `/facilities`, `/stops`, `/routes`, `/shapes` | 24 h (or GTFS at build) |
 | `/schedules` | until the next service day |
-| CDN vehicles / alerts | every 10 s / every 30-60 s at most |
 
 **If-Modified-Since:**
 - V3 sends `last-modified` and `cache-control: max-age=0, private, must-revalidate`, with **no ETag**.
 - Sending `If-Modified-Since` returned **304** on `/alerts` (live). A 304 has no body and no rate-limit headers, and **does not count against the limit** (docs).
-- Expect 304s on alerts and static endpoints, rarely on vehicles: 64 s later the vehicles call returned 200 with changed data.
+- Expect 304s on alerts and static endpoints, rarely on vehicles.
 - `Last-Modified` tracks only the root type, so included data can be staler (docs).
 
-**Retry policy (design)**
+**Retry policy (design, keep it simple)**
 
 | Response | Action |
 |---|---|
 | 304 | Reuse the cached body |
-| 429 | Do not retry immediately. Set a cooldown until `x-ratelimit-reset` + about 1 s of jitter, serve the cache and switch to the CDN. |
-| 5xx or timeout (5 s AbortController) | Retry at most 2 times with exponential backoff plus jitter (about 500 ms, then about 1,500 ms), then fall back. |
-| 400, 403, 404 | Do not retry. These are bugs, a bad key, or a resolved alert. |
-| `x-ratelimit-remaining <= 2` | Stop calling V3 until the reset. |
+| 429 | Do not retry immediately. Wait until `x-ratelimit-reset` + about 1 s, serve the last good data |
+| 5xx or timeout (5 s `AbortSignal.timeout`) | Retry at most 2 times with a growing wait (about 500 ms, then about 1,500 ms), then fall back |
+| 400, 403, 404 | Do not retry. These are bugs, a bad key, or a resolved alert |
 
-**Circuit breaker (design):** after 3 consecutive failures, open the circuit for 60 s and serve fallbacks. Then let one probe through (half-open).
-
-**Fallback chain:**
+**Fallback chain (short):**
 ```
-V3 (keyed, cached)  ->  CDN *_enhanced.json (normalized to the V3 shape)
-                    ->  last-good snapshot (memory/KV, with fetchedAt)
-                    ->  bundled demo snapshot (JSON in the repo, so the demo always works)
+V3 (keyed, shared cache)  ->  last-good snapshot (KV or memory, with fetchedAt)
+                          ->  bundled demo snapshot (JSON in the repo, so the demo always works)
 ```
-- Every API response to the client includes `source: "v3" | "cdn" | "cache" | "demo"` and `ageSec`.
+- Every API response to the client includes `source: "v3" | "cache" | "demo"` and `ageSec`.
 - Show a "data may be stale" badge when the age is over 90 s.
 - Show "Scheduled" whenever predictions came from `/schedules`.
+- Optional, only if everything else is finished: the MBTA CDN realtime files (section 4) as an extra fallback, and a circuit breaker that pauses calls for 60 s after 3 failures in a row.
 
-**TypeScript sketch**
+**TypeScript sketch (design)**
 
 ```ts
-// lib/mbta.ts: server-only. One cache shared by all clients; no MBTA call per browser.
-type Src = "v3" | "cdn" | "cache";
-type Entry = { body: any; lastModified?: string; fetchedAt: number; source: Src };
-const cache = new Map<string, Entry>(), inflight = new Map<string, Promise<Entry>>();
-let cooldownUntil = 0, fails = 0, openUntil = 0;
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-const jitter = (ms: number) => ms + Math.random() * ms * 0.5;
-
-export function getMbta(path: string, ttlMs: number, cdnFallback?: () => Promise<any>) {
-  const hit = cache.get(path);
-  if (hit && Date.now() - hit.fetchedAt < ttlMs) return Promise.resolve(hit);
-  if (inflight.has(path)) return inflight.get(path)!;                // coalesce N clients -> 1 call
-  const p = (async (): Promise<Entry> => {
-    try { const e = await fetchWithRetry(path, hit); fails = 0; cache.set(path, e); return e; }
-    catch {
-      if (++fails >= 3) openUntil = Date.now() + 60_000;            // circuit breaker
-      if (cdnFallback) try {
-        const e: Entry = { body: await cdnFallback(), fetchedAt: Date.now(), source: "cdn" };
-        cache.set(path, e); return e;
-      } catch {}
-      if (hit) return { ...hit, source: "cache" };                   // last-good snapshot
-      throw new Error("no data");                                    // caller serves bundled demo JSON
-    } finally { inflight.delete(path); }
-  })();
-  inflight.set(path, p); return p;
-}
-
-async function fetchWithRetry(path: string, prev?: Entry, retries = 2): Promise<Entry> {
-  for (let i = 0; ; i++) {
-    if (Date.now() < Math.max(cooldownUntil, openUntil)) throw new Error("cooldown");
-    const h: Record<string, string> = { "accept-encoding": "gzip" };
-    if (process.env.MBTA_API_KEY) h["x-api-key"] = process.env.MBTA_API_KEY;
-    if (prev?.lastModified) h["if-modified-since"] = prev.lastModified;
-    let res: Response | undefined;
-    try { res = await fetch(`https://api-v3.mbta.com${path}`, { headers: h, signal: AbortSignal.timeout(5000) }); }
-    catch { /* network error or timeout: retry below */ }
-    if (res) {
-      const reset = Number(res.headers.get("x-ratelimit-reset")) * 1000;
-      if (res.status === 304 && prev) return { ...prev, fetchedAt: Date.now(), source: "v3" };
-      if (res.ok) {
-        if (Number(res.headers.get("x-ratelimit-remaining")) <= 2 && reset) cooldownUntil = reset;
-        return { body: await res.json(), lastModified: res.headers.get("last-modified") ?? undefined,
-                 fetchedAt: Date.now(), source: "v3" };
-      }
-      if (res.status === 429) { cooldownUntil = (reset || Date.now() + 60_000) + jitter(1000); throw new Error("429"); }
-      if (res.status < 500) throw new Error(`HTTP ${res.status}`);  // 400/403/404: never retry
-    }
-    if (i >= retries) throw new Error("upstream failed");
-    await sleep(jitter(500 * 3 ** i));                               // 500ms, 1500ms + jitter
+// lib/mbta.ts: server-only. Browsers never call MBTA.
+export async function getMbta(path: string, revalidateSec: number) {
+  const headers: Record<string, string> = {};
+  if (process.env.MBTA_API_KEY) headers["x-api-key"] = process.env.MBTA_API_KEY;
+  try {
+    const res = await fetch(`https://api-v3.mbta.com${path}`, {
+      headers,
+      next: { revalidate: revalidateSec },   // shared server cache
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return { source: "v3" as const, body: await res.json(), fetchedAt: Date.now() };
+  } catch {
+    return null; // the route handler serves the last-good snapshot, then the bundled demo JSON
   }
 }
 ```
 
-Usage: `getMbta("/vehicles?filter[route]=Red,...&include=trip", 15_000, () => fetchCdnVehiclesNormalized())`. The fallback function fetches `cdn.mbta.com/realtime/VehiclePositions_enhanced.json`, filters it to subway and maps it to our internal shape.
+Always pass `filter[activity]=ALL` on alert paths, and add a test for it.
 
 ---
 
-## 6. Crash history and prediction (static, no live API)
+## 6. Crash history (static, no live API)
 
-Crash data is **history, not live**. We ship a precomputed static JSON layer and our own backtested forecast. Nothing on this layer can rate-limit or fail at runtime.
+Crash data is **history, not live**. We ship a precomputed static JSON layer and a backtest that shows how well past counts point to where later crashes happened. It is not a forecast model, so never call it a prediction. Nothing on this layer can rate-limit or fail at runtime.
 
 **Data**
 - Source: the Boston Vision Zero CKAN dump (`e4bfe397-6bfc-49c5-9367-c879fac7401d`).
@@ -478,7 +444,7 @@ COVID in 2020 cut all crashes by about 23% and ped crashes by about 43%. Ped and
    - Keep only rows inside the bbox lat 42.2-42.42, lon -71.2 to -70.98.
    - 1,706 cells have at least one crash. That is the denominator for every ranking.
 2. Rank cells by their **historical ped+bike count**. A recency weight `sum(0.5^(age_years/2))` scores within about 1 point of the plain count; it is optional.
-3. Spread the risk over time: expected crashes in cell c at hour-of-week h = cell yearly rate × the citywide hour-of-week share for that mode (168 bins). For bikes, also apply a 12-bin month factor.
+3. (Not used.) An earlier plan scaled risk by hour of week and by month. Skip it: it adds complexity, per-cell hour profiles are too sparse, and judges will not see the payoff. Show time patterns as a plain note instead.
 4. Show it as tiers: top 1%, top 5%, top 10%, other.
 - **Don't use** empirical-Bayes shrinkage toward the car-crash rate (it cut top-5% capture by 4-7 points) or 3×3 neighbour smoothing (it made things worse). Car-crash hotspots are not the same places as ped/bike hotspots. Per-cell hour profiles are too sparse (about 20 crashes per cell).
 
@@ -537,7 +503,7 @@ Two more examples:
   - the street label;
   - "N ped / M bike crashes since 2015, X in the last 2 years";
   - an hour-of-week strip, e.g. "Most crashes: weekdays 4-7 pm".
-- **Route warning:** sum the cell rates along the walk or bike leg, and flag legs that enter a top-5% cell ("You pass 2 high-crash intersections"). Scale by the current hour-of-week factor. For bikes, also apply the month factor (summer about 2×, winter about 0.4×).
+- **Route warning:** find the 250 m cells the walk passes through and flag any that are in the top 5% ("Your walk passes through 2 high-crash areas"). Cells are not intersections. For intersection wording, group crashes by `street` + `xstreet1` (20,769 rows are typed Intersection) and measure distance to those points instead. Do not scale by the current hour.
 - **"How we know" panel:** "Ranking places by past crashes caught 27% of 2024-26 pedestrian/bike crashes in just 5% of the city's crash-prone area, 5-6x better than chance."
 - **Label:** "Based on 2015-2026 Boston Vision Zero records. Historical, not live."
 - **Caveats to state:**
@@ -547,11 +513,11 @@ Two more examples:
   - 2026 is partial.
   - Counts are still below pre-COVID levels, so show crashes per year from the last 3-5 years.
 - **Build:** a script fetches the CSV, then:
-  1. Parses `dispatch_ts` as UTC and converts it to America/New_York. The manual DST rule is UTC-4 from the second Sunday of March at 07:00 UTC to the first Sunday of November at 06:00 UTC, otherwise UTC-5.
+  1. Converts `dispatch_ts` (UTC) to America/New_York with `Intl.DateTimeFormat`; do not hand-write daylight-saving rules. Sanity check: the pedestrian crash peak must fall in the afternoon (3-7 PM local); if it lands near midday the conversion is wrong. The team has not re-verified this yet.
   2. Assigns grid cells and stores per-cell counts (total, last 2 years, last 5 years, recency score).
   3. Stores a label per cell: the most common non-empty `street` + `xstreet1` pair. `street` is often blank, so fall back to `xstreet1`.
   4. Stores the centroid of each cell.
-  5. Stores 168-bin hour-of-week shares per mode and the 12-bin month factor.
+  5. (Optional) Stores plain hour-of-day and day-of-week shares per mode, for the time-pattern note only.
   6. Computes the tiers.
 - The output is about 150-250 KB of JSON. Rerun the backtest (hold out the last 2-3 years) whenever the data refreshes.
 - Reference scripts: `research/crash-backtest/crash_bt.py` (stdlib only; run `python -I crash_bt.py <crash.csv>`, about 1 min) and `research/crash-backtest/top.py`.
@@ -583,3 +549,39 @@ Two more examples:
 21. Each GTFS elevator appears as two directed pathway rows. Close both. 6 South Station bus-terminal elevators have no `facility_id`.
 22. Route colors come without a leading `#`.
 23. Crash layer: it is not live. Plain counts beat the fancier models. Prediction of *where* is modest (about 27% of future crashes in the top 5% of cells), so don't call it ML or "risk per trip".
+24. **Page `/facilities`.** A single request with `page[limit]=1000` returned exactly 1,000 rows, a silent cap. Filter by type and page with `page[offset]` for true totals (237 elevators, 183 escalators, 58 ramps, 56 portable lifts, 169 parking areas).
+25. **The Boston data portal's SQL endpoint is touchy.** One query returned 403 and one 311 table returned 409. Prefer `datastore_search` with filters and paging, or download the CSV or GeoJSON at build time.
+26. **Boston has more than one 311 table** ("311 Service Requests - 2026", "- 2025", "- 2024" and "NEW SYSTEM"). Check which one holds current cases before you trust a count.
+27. **Crash timestamps:** sanity-check the hour-of-day peak after converting from UTC (see section 6).
+
+---
+
+## 8. Street-level data (Boston, checked 2026-10-24)
+
+### 8.1 Pedestrian Ramp Inventory
+- Dataset `pedestrian-ramp-inventory` on data.boston.gov. Resources: GeoJSON, CSV (datastore), ArcGIS REST, KML, shapefile. **(live)**
+- 24,022 rows. Fields: `RAMP_ID, COND, INSP, ACCESS_, CROSS_, APRON_SL, LANDING_SL, LIP, PWD, CITYCODE, RCI, REPAIR_ALT, HIGHWAY, ADDRESS, NPR, REVEAL, SWK_WIDTH, CONST_DATE, SWK_MATL, MATL, CONST_PROG, RAMP_CAT, INSP_NOTES, INSP_DATE, CONST_NOTE, EST_COST, GIS_NOTES, AAB_COMP, PARENT, POINT_X, POINT_Y, ID2, AAB_LIKE_C, shape_wkt`. `shape_wkt` is a WGS84 point (`POINT (lon lat)`). **(live)**
+- Condition counts **(live)**: fair, minor maintenance about 15,500; excellent about 3,400; unknown about 2,950; poor, major maintenance about 2,160. The text casing varies ("F - FAIR MINOR MAINTENANCE" vs "F - Fair Minor Maintenance"), so normalise it.
+- `LIP`: YES, NO or UNKNOWN. At least 3,460 rows say YES (2,257 and 1,205 in the two largest groups).
+- `AAB_COMP`: NO 16,675, YES 4,487, blank 2,860. **UNVERIFIED:** the meaning (probably compliance with the state Architectural Access Board standards). Read the data dictionary before showing it.
+- `ACCESS_` takes the values 0, 1, 2 and the slope fields have no stated units. **UNVERIFIED:** read the data dictionary.
+- Use: draw ramp points; for a walking route, flag ramps within about 15 m that are poor, lipped, or unknown. Always show "no data" separately from "no problem".
+
+### 8.2 Sidewalk Inventory (stretch)
+- `sidewalk-inventory`: 24,727 rows. Fields include `SWK_ID, MATERIAL, SWK_WIDTH, SWK_SLOPE, DAM_LENGTH, DAM_WIDTH, SCI, curb_type, CURB_REV, areaway, NOTES, INSP_DATE, DAM_AREA, RCR, UTIL, SURVEY, DISTRICT, SWK_AREA`. **(live)**
+- Geometry is in `sidewalk-centerline` (GeoJSON). **UNVERIFIED:** that `SWK_ID` joins the two.
+
+### 8.3 Boston 311
+- Datastore tables **(live)**: "311 Service Requests - 2026" (resource `1a0b420d-99f1-4887-9851-990b2a5a6e17`, 190,577 rows from 2026-01-01 to 2026-10-22), "- 2025", "- 2024", and "NEW SYSTEM" (`254adca6-64ab-4c5c-9fc0-a6da622be185`; SQL against it returned 409).
+- Useful fields: `case_enquiry_id, open_dt, closed_dt, case_status, case_title, subject, reason, type, latitude, longitude, neighborhood, location_street_name`.
+- Sidewalk-related `case_title` values in the 2026 table: Unshoveled Sidewalk 11,730; Sidewalk Repair (Make Safe) 3,520; Sidewalk Cover / Manhole 169; Sidewalk (Make Safe) 71; Sidewalk Repair 5. There is no curb-ramp category.
+- Earlier team checks found "Illegally Blocked Sidewalk" and "Street Light Outage" cases. Confirm the exact `case_title` strings before filtering.
+
+### 8.4 Accessible parking at stations
+- `/facilities?filter[type]=PARKING_AREA`: 169 areas; 149 have a `capacity-accessible` property. Example: a Braintree lot with `capacity` 108 and `capacity-accessible` 5. Other properties: `fee-daily`, `contact-phone`, `municipality`, `operator`. **(live)**
+- Boston's open data has no dataset of on-street disabled parking spaces (searches for "disability parking" and "accessible parking" returned only park-accessibility data). Do not claim citywide parking coverage.
+
+### 8.5 Other
+- `bprd-accessible-park-entrances` (394 rows) lists accessible park entrances. **(live)** Stretch.
+- `public-works-active-work-zones` is a daily report of active construction projects. Fields unchecked.
+
