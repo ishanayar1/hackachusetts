@@ -10,10 +10,18 @@ out/
 dist/
 coverage/
 
-# Raw downloads (GTFS zip, crash CSV, ramp GeoJSON). Commit only data/generated/.
+# Raw downloads (GTFS zip, crash CSV, ramp GeoJSON). Commit the generated public/data/ files.
 data/raw/
 
 .DS_Store
 
 # IMPORTANT: do NOT ignore /.kiro. The hackathon rules disqualify submissions
 # whose repo does not contain the .kiro folder.
+
+# Next.js / tooling
+/build
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+npm-debug.log*
+*.pem

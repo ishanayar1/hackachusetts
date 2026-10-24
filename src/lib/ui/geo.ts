@@ -1,0 +1,43 @@
+// Build small GeoJSON collections for the map from static stations, live status and a planned route.
+import type { Station, StationStatusRow } from './api';
+import { ROUTE_COLORS, stepFreeState } from './format';
+import type { Leg } from '@/lib/router';
+
+export function stationsGeojson(
+  stations: Station[] | undefined,
+  live: Map<string, StationStatusRow>,
+): GeoJSON.FeatureCollection<GeoJSON.Point> {
+  return {
+    type: 'FeatureCollection',
+    features: (stations ?? [])
+      .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lon))
+      .map((s) => ({
+        type: 'Feature',
+        id: s.id,
+        properties: { id: s.id, name: s.name, state: stepFreeState(s, live.get(s.id)) },
+        geometry: { type: 'Point', coordinates: [s.lon, s.lat] },
+      })),
+  };
+}
+
+/** One line per ride leg, through the leg's stations, colored by route. */
+export function routeGeojson(
+  legs: Leg[] | undefined,
+  byId: Map<string, Station>,
+): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  const features: GeoJSON.Feature<GeoJSON.LineString>[] = [];
+  for (const leg of legs ?? []) {
+    if (leg.kind !== 'ride') continue;
+    const coords = leg.stationIds
+      .map((id) => byId.get(id))
+      .filter((s): s is Station => !!s)
+      .map((s) => [s.lon, s.lat]);
+    if (coords.length < 2) continue;
+    features.push({
+      type: 'Feature',
+      properties: { route: leg.route, color: ROUTE_COLORS[leg.route] ?? '#1d4ed8' },
+      geometry: { type: 'LineString', coordinates: coords },
+    });
+  }
+  return { type: 'FeatureCollection', features };
+}
