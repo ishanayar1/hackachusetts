@@ -4,11 +4,24 @@ import type { DataSource } from '@/lib/mbta/types';
 import { formatTime, STATE_TEXT, type StepFreeState } from '@/lib/ui/format';
 import { useT } from '@/lib/i18n';
 
-/** Same shapes as the map: filled green dot, green dot in an amber ring with "!", hollow red ring with ×, small grey dot. */
+/** Same shapes as the map: green circle with a wheelchair, green in an amber ring with "!", red ring with ×, grey with "?". */
 export function StateIcon({ state, size = 18 }: { state: StepFreeState; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" aria-hidden="true" className="shrink-0">
-      {state === 'yes' && <circle cx="10" cy="10" r="7" fill="#047857" stroke="#fff" strokeWidth="2" />}
+      {state === 'yes' && (
+        <>
+          <circle cx="10" cy="10" r="8.5" fill="#047857" stroke="#fff" strokeWidth="1.5" />
+          <circle cx="10.2" cy="5.2" r="1.4" fill="#fff" />
+          <path
+            d="M9.8 7.5V11.5H13.4L14.6 14.6M9.8 9.3H12.8M7.6 10.4A3.6 3.6 0 1 0 12.4 14.6"
+            fill="none"
+            stroke="#fff"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </>
+      )}
       {state === 'partial' && (
         <>
           <circle cx="10" cy="10" r="7.5" fill="#047857" stroke="#b45309" strokeWidth="3" />
@@ -22,7 +35,14 @@ export function StateIcon({ state, size = 18 }: { state: StepFreeState; size?: n
           <path d="M7 7l6 6M13 7l-6 6" stroke="#b91c1c" strokeWidth="2" />
         </>
       )}
-      {state === 'unknown' && <circle cx="10" cy="10" r="5" fill="#6b7280" stroke="#fff" strokeWidth="1.5" />}
+      {state === 'unknown' && (
+        <>
+          <circle cx="10" cy="10" r="6.5" fill="#6b7280" stroke="#fff" strokeWidth="1.5" />
+          <text x="10" y="13.3" textAnchor="middle" fontSize="9" fontWeight="700" fill="#fff">
+            ?
+          </text>
+        </>
+      )}
     </svg>
   );
 }

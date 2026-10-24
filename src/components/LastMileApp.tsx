@@ -15,7 +15,7 @@ import type {
 import type { CrashMode } from '@/lib/ui/format';
 import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeojson } from '@/lib/ui/geo';
 import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
-import { formatClock, isPartial, routeName } from '@/lib/ui/format';
+import { DEFAULT_CRASH_MODE, formatClock, isPartial, routeName } from '@/lib/ui/format';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
 import Account from './Account';
 import BrokenNow from './BrokenNow';
@@ -151,7 +151,7 @@ export default function LastMileApp() {
   const [tab, setTab] = useState('broken');
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [selectedHex, setSelectedHex] = useState<CrashHex | null>(null);
-  const [crashMode, setCrashMode] = useState<CrashMode>('recorded');
+  const [crashMode, setCrashMode] = useState<CrashMode>(DEFAULT_CRASH_MODE);
   const [legs, setLegs] = useState<Leg[] | null>(null);
   const [bikeRoute, setBikeRoute] = useState<GeoJSON.FeatureCollection | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);

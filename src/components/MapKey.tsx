@@ -2,7 +2,7 @@
 // Map key (legend) and the crash layer radio group. Lives outside the map so it works without it.
 import { useId, type ReactNode } from 'react';
 import type { MapLayerToggles } from '@/lib/ui/api';
-import { MODEL_BINS, RECORDED_BINS, type CrashMode } from '@/lib/ui/format';
+import { DEFAULT_LAYERS, MODEL_BINS, RECORDED_BINS, type CrashMode } from '@/lib/ui/format';
 import { StateIcon } from './ui';
 import { useT, type T } from '@/lib/i18n';
 
@@ -12,13 +12,36 @@ const MODES: { id: CrashMode; label: string }[] = [
   { id: 'off', label: 'Off' },
 ];
 
-export const DEFAULT_LAYERS: MapLayerToggles = { trains: true, fatal: true, danger: false, equity: false, ramps: false };
+export { DEFAULT_LAYERS };
 
 function Sym({ children }: { children: ReactNode }) {
   return (
     <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" className="shrink-0">
       {children}
     </svg>
+  );
+}
+
+function RampSym({ kind }: { kind: 'poor' | 'lip' | 'both' }) {
+  const fill = kind === 'lip' ? '#fff' : '#9a3412';
+  const mark = kind === 'lip' ? '#9a3412' : '#fff';
+  return (
+    <Sym>
+      <rect x="2.5" y="2.5" width="15" height="15" rx="3.5" fill={fill} stroke={kind === 'both' ? '#111827' : kind === 'lip' ? '#9a3412' : '#fff'} strokeWidth="1.5" />
+      <path d="M5 14 H15 V6.5 Z" fill={mark} />
+      {kind !== 'poor' && <rect x="3.8" y="10" width="1.6" height="4" fill={mark} />}
+    </Sym>
+  );
+}
+
+/** Warning-sign icon as drawn on the map for crash intersections. */
+export function WarnSym({ fill }: { fill: string }) {
+  return (
+    <Sym>
+      <path d="M10 2 L18.5 17 H1.5 Z" fill={fill} stroke="#111827" strokeWidth="1.5" strokeLinejoin="round" />
+      <path d="M10 7 V12" stroke="#111827" strokeWidth="1.8" />
+      <circle cx="10" cy="14.3" r="1" fill="#111827" />
+    </Sym>
   );
 }
 
@@ -38,7 +61,8 @@ const LAYER_ROWS: { id: keyof MapLayerToggles; label: string; symbol: ReactNode 
     label: 'Fatal crashes since 2015 (Boston Vision Zero)',
     symbol: (
       <Sym>
-        <circle cx="10" cy="10" r="6" fill="#fff" stroke="#000" strokeWidth="3" />
+        <circle cx="10" cy="10" r="8" fill="#111827" stroke="#fff" strokeWidth="1.5" />
+        <path d="M7 7 L13 13 M13 7 L7 13" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
       </Sym>
     ),
   },
@@ -47,8 +71,9 @@ const LAYER_ROWS: { id: keyof MapLayerToggles; label: string; symbol: ReactNode 
     label: 'Spots residents reported as dangerous (Boston Vision Zero)',
     symbol: (
       <Sym>
-        <circle cx="10" cy="10" r="6" fill="#fff" stroke="#7e22ce" strokeWidth="2.5" />
-        <circle cx="10" cy="10" r="2" fill="#7e22ce" />
+        <rect x="2.5" y="2.5" width="15" height="15" rx="3.5" fill="#7e22ce" stroke="#fff" strokeWidth="1.2" />
+        <path d="M10 5.5 V11.5" stroke="#fff" strokeWidth="2.2" />
+        <circle cx="10" cy="14.3" r="1.2" fill="#fff" />
       </Sym>
     ),
   },
@@ -66,10 +91,7 @@ const LAYER_ROWS: { id: keyof MapLayerToggles; label: string; symbol: ReactNode 
     id: 'ramps',
     label: 'Curb ramps in poor condition / with a lip (City of Boston inventory)',
     symbol: (
-      <Sym>
-        <circle cx="6" cy="10" r="4" fill="#9a3412" stroke="#fff" strokeWidth="1" />
-        <circle cx="15" cy="10" r="3.5" fill="#fff" stroke="#9a3412" strokeWidth="2" />
-      </Sym>
+      <RampSym kind="poor" />
     ),
   },
 ];
@@ -77,28 +99,22 @@ const LAYER_ROWS: { id: keyof MapLayerToggles; label: string; symbol: ReactNode 
 /** Extra legend lines shown under a layer while it is on. */
 const LAYER_NOTES: Partial<Record<keyof MapLayerToggles, (t: T) => ReactNode>> = {
   trains: (t) => t('Dot in the line color with a white outline; the arrow (from zoom 11) points the way the train is going.'),
-  fatal: (t) => t('Black ring with a white center. Recorded fatal crashes, not a prediction. Tap one for date and place.'),
-  danger: (t) => t('Purple ring with a dot. Reports from residents, not verified crashes. Tap one for the concern.'),
+  fatal: (t) => t('Black circle with a white cross. Recorded fatal crashes, not a prediction. Tap one for date and place.'),
+  danger: (t) => t('Purple square with a white !. Reports from residents, not verified crashes. Tap one for the concern.'),
   equity: (t) => t('Hatched teal areas, under the street names. Tap an area for population and limited-English share.'),
   ramps: (t) => (
     <ul className="space-y-1">
       <li className="flex items-center gap-2">
-        <Sym>
-          <circle cx="10" cy="10" r="4" fill="#9a3412" stroke="#fff" strokeWidth="1" />
-        </Sym>
-        {t('Filled brown dot: poor condition')}
+        <RampSym kind="poor" />
+        {t('Brown square with a white ramp: poor condition')}
       </li>
       <li className="flex items-center gap-2">
-        <Sym>
-          <circle cx="10" cy="10" r="3.5" fill="#fff" stroke="#9a3412" strokeWidth="2" />
-        </Sym>
-        {t('Hollow brown ring: lip at the edge')}
+        <RampSym kind="lip" />
+        {t('White square with a brown ramp and a bar: lip at the edge')}
       </li>
       <li className="flex items-center gap-2">
-        <Sym>
-          <circle cx="10" cy="10" r="4.5" fill="#9a3412" stroke="#111827" strokeWidth="2" />
-        </Sym>
-        {t('Filled dot in a dark ring: both')}
+        <RampSym kind="both" />
+        {t('Brown square in a dark border with a bar: both')}
       </li>
       <li>{t('Shown from zoom 14 (zoom in on a street).')}</li>
     </ul>
@@ -121,7 +137,8 @@ export default function MapKey({
 }) {
   const name = useId();
   const t = useT();
-  const bins = mode === 'model' ? MODEL_BINS : RECORDED_BINS;
+  // The model hides its lowest bin on the map (see crashFilter), so the key does too.
+  const bins = mode === 'model' ? MODEL_BINS.slice(1) : RECORDED_BINS;
   return (
     <details className="rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-900">
       <summary className="flex min-h-11 cursor-pointer items-center font-semibold">{t('Map key and layers')}</summary>
@@ -155,16 +172,16 @@ export default function MapKey({
         )}
         <ul className="space-y-1" aria-label={t('Station symbols')}>
           <li className="flex items-center gap-2">
-            <StateIcon state="yes" /> {t('Filled green dot: step-free now')}
+            <StateIcon state="yes" /> {t('Green circle with a wheelchair: step-free now')}
           </li>
           <li className="flex items-center gap-2">
-            <StateIcon state="partial" /> {t('Green dot in an amber ring with !: partly step-free (one platform blocked)')}
+            <StateIcon state="partial" /> {t('Green circle in an amber ring with !: partly step-free (one platform blocked)')}
           </li>
           <li className="flex items-center gap-2">
-            <StateIcon state="no" /> {t('Red ring with ×: not step-free right now')}
+            <StateIcon state="no" /> {t('White circle in a red ring with ×: not step-free right now')}
           </li>
           <li className="flex items-center gap-2">
-            <StateIcon state="unknown" /> {t('Small grey dot: no step-free data')}
+            <StateIcon state="unknown" /> {t('Small grey circle with ?: no step-free data')}
           </li>
           <li className="flex items-center gap-2">
             <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true">
@@ -202,19 +219,18 @@ export default function MapKey({
               {t(mode === 'model' ? 'Estimated crashes per intersection (team model)' : 'Pedestrian & bike crashes per intersection')}
             </p>
             <ul className="mt-1 space-y-1">
-              {bins.map((b, i) => (
+              {bins.map((b) => (
                 <li key={b.label} className="flex items-center gap-2">
-                  <span
-                    aria-hidden="true"
-                    className="inline-flex h-5 w-8 items-center justify-center rounded-sm border border-slate-500 text-[10px] font-bold"
-                    style={{ background: b.color, color: i >= 2 ? '#fff' : '#111' }}
-                  >
-                    {i + 1}
-                  </span>
+                  <WarnSym fill={b.color} />
                   {t(b.label)}
                 </li>
               ))}
             </ul>
+            {mode === 'model' && (
+              <p className="mt-1 text-slate-800">
+                {t('Intersections under 0.5 crashes a year are hidden to keep the map clear.')}
+              </p>
+            )}
             {mode === 'model' && (
               <p className="mt-1 text-slate-800">{t('Model estimate from police-reported crashes. Not a guarantee.')}</p>
             )}

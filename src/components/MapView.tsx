@@ -6,8 +6,8 @@ import { setWorkerUrl } from 'maplibre-gl';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Map, { Layer, NavigationControl, Source, type MapLayerMouseEvent, type MapRef } from 'react-map-gl/maplibre';
 import type { CrashHex, MapFeatureInfo, MapLayerToggles } from '@/lib/ui/api';
-import { hexFromProps, MODEL_BINS, RECORDED_BINS, ROUTE_COLORS, type CrashMode } from '@/lib/ui/format';
-import { arrowIconName } from '@/lib/ui/geo';
+import { crashFilter, hexFromProps, type CrashMode } from '@/lib/ui/format';
+import { addMapIcons, crashIcon, STATION_ICON } from '@/lib/ui/map-icons';
 
 const STYLES = [
   'https://tiles.openfreemap.org/styles/positron',
@@ -40,7 +40,7 @@ export type MapViewProps = {
 };
 
 const NO_LAYERS: MapLayerToggles = { trains: false, fatal: false, danger: false, equity: false, ramps: false };
-const RAMP_LAYERS = ['ramps-poor', 'ramps-lip', 'ramps-both'];
+const RAMP_LAYERS = ['ramps-points'];
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
 const numOrNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
@@ -79,71 +79,17 @@ function featureInfo(layerId: string, p: Record<string, unknown>): MapFeatureInf
 /** Click priority among the optional point layers (most specific first). */
 const FEATURE_LAYER_ORDER = ['vehicles', 'fatal-points', 'danger-points', ...RAMP_LAYERS];
 
-// Small images drawn in code (no sprite or font glyph needed): a direction arrow per line color, and a hatch for
-// the environmental-justice fill so it does not rely on color alone.
-function addLayerImages(map: import('maplibre-gl').Map) {
-  try {
-    for (const color of new Set([...Object.values(ROUTE_COLORS), '#1d4ed8'])) {
-      const name = arrowIconName(color);
-      if (map.hasImage(name)) continue;
-      const c = document.createElement('canvas');
-      c.width = 24;
-      c.height = 24;
-      const ctx = c.getContext('2d');
-      if (!ctx) return;
-      ctx.beginPath();
-      ctx.moveTo(12, 2);
-      ctx.lineTo(21, 20);
-      ctx.lineTo(3, 20);
-      ctx.closePath();
-      ctx.lineJoin = 'round';
-      ctx.lineWidth = 4;
-      ctx.strokeStyle = '#ffffff';
-      ctx.stroke();
-      ctx.fillStyle = color;
-      ctx.fill();
-      map.addImage(name, ctx.getImageData(0, 0, 24, 24), { pixelRatio: 2 });
-    }
-    if (!map.hasImage('lm-hatch')) {
-      const c = document.createElement('canvas');
-      c.width = 16;
-      c.height = 16;
-      const ctx = c.getContext('2d');
-      if (!ctx) return;
-      ctx.fillStyle = 'rgba(13,148,136,0.10)';
-      ctx.fillRect(0, 0, 16, 16);
-      ctx.strokeStyle = 'rgba(15,118,110,0.55)';
-      ctx.lineWidth = 2;
-      for (const off of [-16, 0, 16]) {
-        ctx.beginPath();
-        ctx.moveTo(off, 16);
-        ctx.lineTo(off + 16, 0);
-        ctx.stroke();
-      }
-      map.addImage('lm-hatch', ctx.getImageData(0, 0, 16, 16), { pixelRatio: 2 });
-    }
-  } catch (err) {
-    // Missing images only hide the arrows / hatching; the base map and other layers keep working.
-    console.warn('Map images could not be added', err);
-  }
-}
-
 // "zoom" stays at the top level of these expressions (MapLibre rejects it nested in arithmetic).
 const TRAIN_RADIUS = ['interpolate', ['linear'], ['zoom'], 10, 3.5, 13, 5, 16, 7];
-const POINT_RADIUS = ['interpolate', ['linear'], ['zoom'], 10, 3, 13, 4.5, 16, 7];
-
-function stepColor(prop: unknown, bins: { min: number; color: string }[]) {
-  const expr: unknown[] = ['step', prop, bins[0].color];
-  for (const b of bins.slice(1)) expr.push(b.min, b.color);
-  return expr;
-}
+const POINT_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 10, 0.6, 13, 0.8, 16, 1.1];
+const STATION_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 10, 0.6, 13, 0.85, 16, 1.1];
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
-const STATION_LAYERS = ['stations-yes', 'stations-partial', 'stations-no', 'stations-unknown'];
+const STATION_LAYERS = ['stations-icons'];
 
-// One circle per intersection; it grows with zoom so dense areas stay readable zoomed out.
-const CRASH_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 2.5, 14, 5, 17, 9];
+// One warning sign per intersection; it grows with zoom so dense areas stay readable zoomed out.
+const CRASH_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 11, 0.45, 14, 0.75, 17, 1.1];
 // Selection ring: 4 px larger at every stop. MapLibre only allows "zoom" at the top level of interpolate,
 // so ['+', CRASH_RADIUS, 4] is rejected.
 const CRASH_SELECTED_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 6.5, 14, 9, 17, 13];
@@ -165,7 +111,7 @@ export default function MapView(props: MapViewProps) {
 
   const onLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
-    if (map) addLayerImages(map);
+    if (map) addMapIcons(map);
     const styleLayers = map?.getStyle()?.layers ?? [];
     setFirstSymbolId(styleLayers.find((l) => l.type === 'symbol')?.id);
     setLoaded(true);
@@ -242,10 +188,6 @@ export default function MapView(props: MapViewProps) {
     : [];
 
   const crashVisible = crashMode !== 'off';
-  const pointColor =
-    crashMode === 'model'
-      ? stepColor(['get', 'risk_yr'], MODEL_BINS)
-      : stepColor(['+', ['get', 'ped'], ['get', 'bike']], RECORDED_BINS);
 
   return (
     <div className="relative h-full w-full">
@@ -290,21 +232,20 @@ export default function MapView(props: MapViewProps) {
               <Source id="crash" type="geojson" data="/data/crash-risk.geojson">
                 <Layer
                   id="crash-points"
-                  type="circle"
+                  type="symbol"
                   beforeId={firstSymbolId}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  filter={crashFilter(crashMode) as any}
                   layout={{
                     visibility: crashVisible ? 'visible' : 'none',
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    'icon-image': crashIcon(crashMode) as any,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    'icon-size': CRASH_ICON_SIZE as any,
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true,
                     // draw the worst intersections on top
-                    'circle-sort-key': crashMode === 'model' ? ['get', 'risk_yr'] : ['+', ['get', 'ped'], ['get', 'bike']],
-                  }}
-                  paint={{
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'circle-color': pointColor as any,
-                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'circle-radius': CRASH_RADIUS as any,
-                    'circle-opacity': 0.85,
-                    'circle-stroke-color': '#7c2d12',
-                    'circle-stroke-width': 0.75,
+                    'symbol-sort-key': crashMode === 'model' ? ['get', 'risk_yr'] : ['+', ['get', 'ped'], ['get', 'bike']],
                   }}
                 />
                 <Layer
@@ -338,82 +279,53 @@ export default function MapView(props: MapViewProps) {
                   paint={{ 'line-color': ['coalesce', ['get', 'color'], '#555555'], 'line-width': 3.5 }}
                 />
               </Source>
-              {/* Curb ramps (City of Boston): filled dot = poor condition, hollow ring = lip at the edge,
-                  filled dot in a dark ring = both. From zoom 14. */}
+              {/* Curb ramps (City of Boston): brown square with a ramp wedge; a bar at the edge marks a lip. From zoom 14. */}
               <Source id="ramps" type="geojson" data={(layers.ramps && props.ramps) || EMPTY_FC}>
                 <Layer
-                  id="ramps-lip"
-                  type="circle"
+                  id="ramps-points"
+                  type="symbol"
                   minzoom={14}
-                  filter={['==', ['get', 'condition'], 'lip at edge']}
-                  layout={{ visibility: vis(layers.ramps) }}
-                  paint={{
-                    'circle-radius': 3.5,
-                    'circle-color': '#ffffff',
-                    'circle-stroke-color': '#9a3412',
-                    'circle-stroke-width': 2,
-                  }}
-                />
-                <Layer
-                  id="ramps-poor"
-                  type="circle"
-                  minzoom={14}
-                  filter={['==', ['get', 'condition'], 'poor condition']}
-                  layout={{ visibility: vis(layers.ramps) }}
-                  paint={{
-                    'circle-radius': 4,
-                    'circle-color': '#9a3412',
-                    'circle-stroke-color': '#ffffff',
-                    'circle-stroke-width': 1,
-                  }}
-                />
-                <Layer
-                  id="ramps-both"
-                  type="circle"
-                  minzoom={14}
-                  filter={['==', ['get', 'condition'], 'poor condition, lip at edge']}
-                  layout={{ visibility: vis(layers.ramps) }}
-                  paint={{
-                    'circle-radius': 4.5,
-                    'circle-color': '#9a3412',
-                    'circle-stroke-color': '#111827',
-                    'circle-stroke-width': 2,
+                  layout={{
+                    visibility: vis(layers.ramps),
+                    'icon-image': [
+                      'match',
+                      ['get', 'condition'],
+                      'lip at edge',
+                      'lm-ramp-lip',
+                      'poor condition, lip at edge',
+                      'lm-ramp-both',
+                      'lm-ramp-poor',
+                    ],
+                    'icon-size': 0.8,
+                    'icon-allow-overlap': true,
                   }}
                 />
               </Source>
-              {/* Resident-reported danger spots: purple ring with a purple center dot. */}
+              {/* Resident-reported danger spots: purple square with a white "!". */}
               <Source id="danger" type="geojson" data={(layers.danger && props.danger) || EMPTY_FC}>
                 <Layer
                   id="danger-points"
-                  type="circle"
-                  layout={{ visibility: vis(layers.danger) }}
-                  paint={{
+                  type="symbol"
+                  layout={{
+                    visibility: vis(layers.danger),
+                    'icon-image': 'lm-danger',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'circle-radius': POINT_RADIUS as any,
-                    'circle-color': '#ffffff',
-                    'circle-stroke-color': '#7e22ce',
-                    'circle-stroke-width': 2.5,
+                    'icon-size': POINT_ICON_SIZE as any,
+                    'icon-allow-overlap': true,
                   }}
                 />
-                <Layer
-                  id="danger-dot"
-                  type="circle"
-                  layout={{ visibility: vis(layers.danger) }}
-                  paint={{ 'circle-radius': 1.8, 'circle-color': '#7e22ce' }}
-                />
               </Source>
-              {/* Fatal crashes: black ring with a white center. */}
+              {/* Fatal crashes: black circle with a white cross. */}
               <Source id="fatal" type="geojson" data={(layers.fatal && props.fatal) || EMPTY_FC}>
                 <Layer
                   id="fatal-points"
-                  type="circle"
-                  layout={{ visibility: vis(layers.fatal) }}
-                  paint={{
+                  type="symbol"
+                  layout={{
+                    visibility: vis(layers.fatal),
+                    'icon-image': 'lm-fatal',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'circle-radius': POINT_RADIUS as any,
-                    'circle-color': '#ffffff',
-                    'circle-stroke-color': '#000000',
-                    'circle-stroke-width': 3,
+                    'icon-size': POINT_ICON_SIZE as any,
+                    'icon-allow-overlap': true,
                   }}
                 />
               </Source>
@@ -522,76 +434,29 @@ export default function MapView(props: MapViewProps) {
                 />
               </Source>
               <Source id="stations" type="geojson" data={stations}>
-                {/* Shape + stroke differ by state, not just color (legend in MapKey). */}
+                {/* Shape and symbol differ by state, not just color (legend in MapKey). */}
                 <Layer
-                  id="stations-unknown"
-                  type="circle"
-                  filter={['==', ['get', 'state'], 'unknown']}
-                  paint={{
-                    'circle-radius': 4.5,
-                    'circle-color': '#6b7280',
-                    'circle-stroke-color': '#ffffff',
-                    'circle-stroke-width': 1.5,
-                  }}
-                />
-                <Layer
-                  id="stations-no"
-                  type="circle"
-                  filter={['==', ['get', 'state'], 'no']}
-                  paint={{
-                    'circle-radius': 6,
-                    'circle-color': '#ffffff',
-                    'circle-stroke-color': '#b91c1c',
-                    'circle-stroke-width': 3,
-                  }}
-                />
-                <Layer
-                  id="stations-no-x"
+                  id="stations-icons"
                   type="symbol"
-                  filter={['==', ['get', 'state'], 'no']}
                   layout={{
-                    'text-field': '×',
-                    'text-font': ['Noto Sans Bold'],
-                    'text-size': 13,
-                    'text-allow-overlap': true,
-                    'text-ignore-placement': true,
+                    'icon-image': [
+                      'match',
+                      ['get', 'state'],
+                      'yes',
+                      STATION_ICON.yes,
+                      'partial',
+                      STATION_ICON.partial,
+                      'no',
+                      STATION_ICON.no,
+                      STATION_ICON.unknown,
+                    ],
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    'icon-size': STATION_ICON_SIZE as any,
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true,
+                    // problem stations on top
+                    'symbol-sort-key': ['match', ['get', 'state'], 'no', 3, 'partial', 2, 'yes', 1, 0],
                   }}
-                  paint={{ 'text-color': '#b91c1c' }}
-                />
-                <Layer
-                  id="stations-yes"
-                  type="circle"
-                  filter={['==', ['get', 'state'], 'yes']}
-                  paint={{
-                    'circle-radius': 6.5,
-                    'circle-color': '#047857',
-                    'circle-stroke-color': '#ffffff',
-                    'circle-stroke-width': 2,
-                  }}
-                />
-                <Layer
-                  id="stations-partial"
-                  type="circle"
-                  filter={['==', ['get', 'state'], 'partial']}
-                  paint={{
-                    'circle-radius': 7,
-                    'circle-color': '#047857',
-                    'circle-stroke-color': '#b45309',
-                    'circle-stroke-width': 3,
-                  }}
-                />
-                <Layer
-                  id="stations-partial-mark"
-                  type="symbol"
-                  filter={['==', ['get', 'state'], 'partial']}
-                  layout={{
-                    'text-field': '!',
-                    'text-font': ['Noto Sans Bold'],
-                    'text-size': 12,
-                    'text-allow-overlap': true,
-                    'text-ignore-placement': true,
-                  }}
-                  paint={{ 'text-color': '#ffffff' }}
                 />
                 <Layer
                   id="stations-selected"

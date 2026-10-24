@@ -10,6 +10,11 @@ import {
   nextTrainGroups,
   partialLines,
   stepFreeState,
+  crashFilter,
+  DEFAULT_CRASH_MODE,
+  DEFAULT_LAYERS,
+  MODEL_BINS,
+  MODEL_MIN_SHOWN,
 } from '@/lib/ui/format';
 import { newlyBlocked } from '@/lib/ui/myStations';
 import { warningLines, type WalkWarnings } from '@/lib/ui/walk';
@@ -160,5 +165,18 @@ describe('crash intersections (local fallback search)', () => {
   });
   it('keeps the recorded pedestrian + bike count', () => {
     expect(crashSpotsFromGeojson(fc, '', 'recorded')[0]).toMatchObject({ site: props.site, pedBike: 95 });
+  });
+});
+
+describe('minimal default map', () => {
+  it('defaults to the model and hides the low-risk bin', () => {
+    expect(DEFAULT_CRASH_MODE).toBe('model');
+    expect(MODEL_MIN_SHOWN).toBe(MODEL_BINS[1].min);
+    expect(crashFilter('model')).toEqual(['>=', ['get', 'risk_yr'], 0.5]);
+    expect(crashFilter('recorded')).toBeUndefined();
+  });
+
+  it('starts with every optional layer off', () => {
+    expect(Object.values(DEFAULT_LAYERS).every((v) => v === false)).toBe(true);
   });
 });
