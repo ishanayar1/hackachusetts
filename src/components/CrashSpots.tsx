@@ -1,8 +1,8 @@
 'use client';
-// "Crash spots": searchable list of recorded crash areas. Each item flies the map there and shows details.
+// "Crash spots": searchable list of recorded crash intersections. Each item flies the map there and shows details.
 import { useDeferredValue, useId, useState } from 'react';
 import type { CrashHex } from '@/lib/ui/api';
-import { crashSpotsFromGeojson, crashTitle } from '@/lib/ui/format';
+import { crashSpotsFromGeojson } from '@/lib/ui/format';
 import { useCrashGeojson, useCrashLocations } from '@/lib/ui/hooks';
 import { Notice } from './ui';
 
@@ -34,7 +34,7 @@ export default function CrashSpots({
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <div>
           <label htmlFor={`${ids}-q`} className="block text-sm font-semibold text-slate-900">
-            Search by street or area
+            Search by street or neighborhood
           </label>
           <input
             id={`${ids}-q`}
@@ -65,21 +65,22 @@ export default function CrashSpots({
         <p className="mt-2 text-sm text-slate-800">Model estimate from police-reported crashes. Not a guarantee.</p>
       )}
       <p aria-live="polite" className="mt-2 text-sm text-slate-800">
-        {loading ? 'Loading crash spots…' : `${results.length} ${results.length === 1 ? 'area' : 'areas'} shown.`}
+        {loading ? 'Loading crash spots…' : `${results.length} ${results.length === 1 ? 'intersection' : 'intersections'} shown.`}
       </p>
       {api.error && local.error && <Notice tone="error">Crash data is not available right now.</Notice>}
       <ul className="mt-2 space-y-2">
         {results.map((h) => (
-          <li key={h.hex}>
+          <li key={h.site}>
             <button
               type="button"
-              aria-pressed={selectedHex === h.hex}
+              aria-pressed={selectedHex === h.site}
               onClick={() => onSelectHex(h)}
               className={`min-h-11 w-full rounded-md border p-2 text-left text-sm ${
-                selectedHex === h.hex ? 'border-blue-800 bg-blue-50' : 'border-slate-300 bg-white hover:bg-slate-50'
+                selectedHex === h.site ? 'border-blue-800 bg-blue-50' : 'border-slate-300 bg-white hover:bg-slate-50'
               }`}
             >
-              <span className="block font-semibold text-slate-900">{crashTitle(h)}</span>
+              <span className="block font-semibold text-slate-900">{h.label}</span>
+              {h.neighborhood && <span className="block text-slate-700">{h.neighborhood}</span>}
               <span className="block text-slate-800">
                 {sort === 'model'
                   ? `Team model: about ${h.estimatePerYear.toFixed(1)} crashes a year · ${h.pedBike} pedestrian & bike recorded`

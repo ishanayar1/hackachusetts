@@ -4,9 +4,7 @@ import type { NormalizedAlert, Prediction, Station } from '@/lib/ui/api';
 import {
   alertActive,
   alertDatesKnown,
-  crashLabel,
   crashSpotsFromGeojson,
-  crashTitle,
   formatTime,
   legRoutesText,
   nextTrainGroups,
@@ -136,7 +134,7 @@ describe('warningLines', () => {
   it('adds "and N more" for hazards and drops 0-crash areas', () => {
     const lines = warningLines({
       ...base,
-      crashAreas: [{ hex: 'h', label: 'Dominic J. Bianculli Boulevard', pedBike: 0 }],
+      crashAreas: [{ site: 'H', label: 'Dominic J. Bianculli Boulevard', pedBike: 0 }],
       hazards: [{ id: '1', type: 'sidewalk', label: 'Sidewalk repair on X St', openedAt: '2026-10-01', lat: 0, lon: 0 }],
       hazardTotal: 36,
     });
@@ -146,30 +144,21 @@ describe('warningLines', () => {
   });
 });
 
-describe('crash names', () => {
+describe('crash intersections (local fallback search)', () => {
   const props = {
-    hex: '892a3066373ffff',
-    label: 'Massachusetts Turnpike, Back Bay',
-    label_osm: 'Massachusetts Turnpike, Back Bay',
-    label_csv: 'Boylston St @ Massachusetts Ave',
+    site: 'BOYLSTON ST & MASSACHUSETTS AVE',
+    label: 'Boylston St & Massachusetts Ave',
+    neighborhood: 'Back Bay',
     ped: 80,
     bike: 15,
   };
-  it('uses the crash intersection and keeps the OSM neighbourhood', () => {
-    expect(crashLabel(props)).toEqual({ label: 'Boylston St & Massachusetts Ave', area: 'Back Bay' });
-    expect(crashTitle(crashLabel(props))).toBe('Boylston St & Massachusetts Ave, Back Bay');
-    // API labels that already carry the area are not doubled.
-    expect(crashTitle({ label: 'Dudley Street, Nubian Square', area: 'Nubian Square' })).toBe('Dudley Street, Nubian Square');
-  });
-  it('falls back to the OSM street for highway-only CSV values', () => {
-    expect(crashTitle(crashLabel({ label_osm: 'Utica Street, Leather District', label_csv: 'I93' }))).toBe(
-      'Utica Street, Leather District',
-    );
-  });
-  it('local search matches label_csv and label_osm', () => {
-    const fc = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: props, geometry: null }] } as unknown as GeoJSON.FeatureCollection;
+  const fc = { type: 'FeatureCollection', features: [{ type: 'Feature', properties: props, geometry: null }] } as unknown as GeoJSON.FeatureCollection;
+  it('matches the intersection name and the neighborhood', () => {
     expect(crashSpotsFromGeojson(fc, 'boylston', 'recorded')).toHaveLength(1);
-    expect(crashSpotsFromGeojson(fc, 'turnpike', 'recorded')).toHaveLength(1);
+    expect(crashSpotsFromGeojson(fc, 'back bay', 'recorded')).toHaveLength(1);
     expect(crashSpotsFromGeojson(fc, 'dudley', 'recorded')).toHaveLength(0);
+  });
+  it('keeps the recorded pedestrian + bike count', () => {
+    expect(crashSpotsFromGeojson(fc, '', 'recorded')[0]).toMatchObject({ site: props.site, pedBike: 95 });
   });
 });

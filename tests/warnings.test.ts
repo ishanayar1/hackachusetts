@@ -38,9 +38,10 @@ const hazard = (id: string, lat: number, lon = -71.065, extra: Partial<Hazard> =
 });
 const ramp = (id: string, lat: number, lon = -71.065, condition = 'poor condition'): Ramp => ({ id, condition, lat, lon });
 const lonPerM = 1 / (M_PER_DEG_LAT * Math.cos((LAT * Math.PI) / 180));
-const spot = (hex: string, lat: number, pedBike: number, lng = -71.065): CrashSpot => ({
-  hex,
-  label: `Spot ${hex}`,
+const spot = (site: string, lat: number, pedBike: number, lng = -71.065): CrashSpot => ({
+  site,
+  label: `Spot ${site}`,
+  neighborhood: '',
   lat,
   lng,
   pedBike,
@@ -82,7 +83,7 @@ describe('walkWarnings', () => {
     expect(walkWarnings(LINE, data, { radiusM: 50 }).hazards).toHaveLength(0);
   });
 
-  it('uses 120 m for crash areas, sorts by pedBike desc and keeps at most 5', () => {
+  it('uses 60 m for crash intersections, sorts by pedBike desc and keeps at most 5', () => {
     const crashSpots = [
       spot('a', north(100), 3),
       spot('b', north(10), 9),
@@ -90,16 +91,18 @@ describe('walkWarnings', () => {
       spot('d', north(0), 1),
       spot('e', north(110), 12),
       spot('f', north(20), 5),
+      spot('g', north(-30), 2),
+      spot('h', north(40), 4),
       spot('far', north(200), 99),
     ];
     const w = walkWarnings(LINE, { crashSpots, hazards: [], ramps: [] });
-    expect(w.crashAreas.map((c) => c.hex)).toEqual(['e', 'b', 'c', 'f', 'a']);
-    expect(w.crashAreas[0]).toEqual({ hex: 'e', label: 'Spot e', pedBike: 12 });
+    expect(w.crashAreas.map((c) => c.site)).toEqual(['b', 'c', 'f', 'h', 'g']);
+    expect(w.crashAreas[0]).toEqual({ site: 'b', label: 'Spot b', pedBike: 9 });
   });
 
   it('drops crash areas with 0 pedestrian/bike crashes', () => {
     const w = walkWarnings(LINE, { crashSpots: [spot('zero', north(5), 0), spot('one', north(5), 1)], hazards: [], ramps: [] });
-    expect(w.crashAreas.map((c) => c.hex)).toEqual(['one']);
+    expect(w.crashAreas.map((c) => c.site)).toEqual(['one']);
   });
 
   it('caps hazards and ramps at 10, nearest first, and reports uncapped totals', () => {
@@ -196,13 +199,13 @@ describe('loadWarningDataFromDisk', () => {
       path.join(dir, 'crash-risk.geojson'),
       JSON.stringify({
         type: 'FeatureCollection',
-        features: [{ type: 'Feature', properties: { hex: 'x1', label: 'Main St', lat: LAT, lng: -71.065, ped: 2, bike: 1 } }],
+        features: [{ type: 'Feature', properties: { site: 'X1', label: 'Main St', lat: LAT, lng: -71.065, ped: 2, bike: 1 } }],
       }),
     );
     const d1 = loadWarningDataFromDisk(dir);
     expect(d1.hazards.map((h) => h.id)).toEqual(['h1']);
     expect(d1.ramps.map((r) => r.id)).toEqual(['r1']);
-    expect(d1.crashSpots[0]).toMatchObject({ hex: 'x1', pedBike: 3 });
+    expect(d1.crashSpots[0]).toMatchObject({ site: 'X1', pedBike: 3 });
     expect(loadWarningDataFromDisk(dir)).toBe(d1);
   });
 

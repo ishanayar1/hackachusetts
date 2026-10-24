@@ -38,6 +38,9 @@ const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', feature
 
 const STATION_LAYERS = ['stations-yes', 'stations-partial', 'stations-no', 'stations-unknown'];
 
+// One circle per intersection; it grows with zoom so dense areas stay readable zoomed out.
+const CRASH_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 2.5, 14, 5, 17, 9];
+
 // MapLibre 6 looks for its worker next to its own bundle file, which the bundler renames.
 // Point it at the worker emitted as a static asset instead.
 setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).href);
@@ -86,14 +89,14 @@ export default function MapView(props: MapViewProps) {
         onSelectStation(String(st.properties.id));
         return;
       }
-      const hex = feats.find((f) => f.layer.id === 'crash-fill');
+      const hex = feats.find((f) => f.layer.id === 'crash-points');
       if (hex?.properties) onSelectHex(hexFromProps(hex.properties as Record<string, unknown>));
     },
     [onSelectStation, onSelectHex],
   );
 
   const crashVisible = crashMode !== 'off';
-  const fillColor =
+  const pointColor =
     crashMode === 'model'
       ? stepColor(['get', 'risk_yr'], MODEL_BINS)
       : stepColor(['+', ['get', 'ped'], ['get', 'bike']], RECORDED_BINS);
@@ -114,7 +117,7 @@ export default function MapView(props: MapViewProps) {
           onLoad={onLoad}
           onError={onError}
           onClick={onClick}
-          interactiveLayerIds={loaded ? [...STATION_LAYERS, ...(crashVisible ? ['crash-fill'] : [])] : []}
+          interactiveLayerIds={loaded ? [...STATION_LAYERS, ...(crashVisible ? ['crash-points'] : [])] : []}
           cursor="pointer"
           attributionControl={{ compact: true }}
         >
@@ -123,23 +126,37 @@ export default function MapView(props: MapViewProps) {
             <>
               <Source id="crash" type="geojson" data="/data/crash-risk.geojson">
                 <Layer
-                  id="crash-fill"
-                  type="fill"
+                  id="crash-points"
+                  type="circle"
                   beforeId={firstSymbolId}
-                  layout={{ visibility: crashVisible ? 'visible' : 'none' }}
+                  layout={{
+                    visibility: crashVisible ? 'visible' : 'none',
+                    // draw the worst intersections on top
+                    'circle-sort-key': crashMode === 'model' ? ['get', 'risk_yr'] : ['+', ['get', 'ped'], ['get', 'bike']],
+                  }}
                   paint={{
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'fill-color': fillColor as any,
-                    'fill-opacity': 0.45,
+                    'circle-color': pointColor as any,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    'circle-radius': CRASH_RADIUS as any,
+                    'circle-opacity': 0.85,
+                    'circle-stroke-color': '#7c2d12',
+                    'circle-stroke-width': 0.75,
                   }}
                 />
                 <Layer
-                  id="crash-outline"
-                  type="line"
+                  id="crash-selected"
+                  type="circle"
                   beforeId={firstSymbolId}
                   layout={{ visibility: crashVisible ? 'visible' : 'none' }}
-                  filter={['==', ['get', 'hex'], selectedHex ?? '']}
-                  paint={{ 'line-color': '#111827', 'line-width': 3 }}
+                  filter={['==', ['get', 'site'], selectedHex ?? '']}
+                  paint={{
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    'circle-radius': ['+', CRASH_RADIUS, 4] as any,
+                    'circle-color': 'rgba(0,0,0,0)',
+                    'circle-stroke-color': '#111827',
+                    'circle-stroke-width': 3,
+                  }}
                 />
               </Source>
               <Source id="lines" type="geojson" data="/data/lines.geojson">

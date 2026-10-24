@@ -34,8 +34,9 @@ export type StationDetailData = {
 export type PlannedRoute = RouteResult & { closedFacilityIds: string[] };
 
 export type CrashSpot = {
-  hex: string;
+  site: string;
   label: string;
+  neighborhood: string;
   lat: number;
   lng: number;
   pedBike: number;
@@ -44,13 +45,9 @@ export type CrashSpot = {
   mv: number;
   total: number;
   estimatePerYear: number;
-  /** OSM neighbourhood, e.g. "Back Bay". */
-  area?: string;
-  /** OSM reverse-geocode label of the hex centre (the old label). */
-  osmLabel?: string;
 };
 export type CrashLocationsData = { count: number; results: CrashSpot[] };
-/** A crash hex as shown in the panel. first/last are only known when it came from the map layer. */
+/** A crash intersection as shown in the panel. first/last are only known when it came from the map layer. */
 export type CrashHex = CrashSpot & { first?: string; last?: string };
 
 export class HttpError extends Error {

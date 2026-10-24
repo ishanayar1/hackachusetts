@@ -1,5 +1,4 @@
 // Plain-words formatting helpers for the panel. Pure functions.
-import { crashLabel } from '@/lib/crash';
 import type {
   BlockedPlatform,
   CrashHex,
@@ -236,35 +235,25 @@ export function facilityTypeWord(type: string): string {
 
 export type CrashMode = 'recorded' | 'model' | 'off';
 
-/** Bins for recorded pedestrian + bike crashes per hex (about the 50th / 75th / 90th percentiles). */
+/** Bins for recorded pedestrian + bike crashes per intersection (top 25% / 6% / 1.5% start at 2 / 5 / 10). */
 export const RECORDED_BINS = [
-  { min: 0, label: '0 to 4 recorded', color: '#fee391' },
-  { min: 5, label: '5 to 12 recorded', color: '#fdae61' },
-  { min: 13, label: '13 to 29 recorded', color: '#e8590c' },
-  { min: 30, label: '30 or more recorded', color: '#9e1a1a' },
+  { min: 0, label: '0 to 1 recorded', color: '#fee391' },
+  { min: 2, label: '2 to 4 recorded', color: '#fdae61' },
+  { min: 5, label: '5 to 9 recorded', color: '#e8590c' },
+  { min: 10, label: '10 or more recorded', color: '#9e1a1a' },
 ];
-/** Bins for the team model's estimate (risk_yr, crashes per year at the next-month rate). */
+/** Bins for the team model's estimate per intersection (risk_yr; top 15% / 8% / 2% start at 0.5 / 1 / 2). */
 export const MODEL_BINS = [
-  { min: 0, label: 'Under 2 a year', color: '#e9d8fd' },
-  { min: 2, label: '2 to 5 a year', color: '#b197fc' },
-  { min: 5, label: '5 to 10 a year', color: '#7048e8' },
-  { min: 10, label: '10 or more a year', color: '#3b1a8c' },
+  { min: 0, label: 'Under 0.5 a year', color: '#e9d8fd' },
+  { min: 0.5, label: '0.5 to 1 a year', color: '#b197fc' },
+  { min: 1, label: '1 to 2 a year', color: '#7048e8' },
+  { min: 2, label: '2 or more a year', color: '#3b1a8c' },
 ];
 
 export function binLabel(value: number, bins: { min: number; label: string }[]): string {
   let out = bins[0].label;
   for (const b of bins) if (value >= b.min) out = b.label;
   return out;
-}
-
-const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
-
-// Same crash-area naming as /api/crash/locations (src/lib/crash.ts is pure, no server-only imports).
-export { crashLabel };
-
-/** "Boylston St @ Massachusetts Ave, Back Bay" (area only added when the label does not already name it). */
-export function crashTitle(h: { label: string; area?: string }): string {
-  return h.area && !h.label.toLowerCase().includes(h.area.toLowerCase()) ? `${h.label}, ${h.area}` : h.label;
 }
 
 /** GeoJSON feature properties (from crash-risk.geojson) -> CrashHex. */
@@ -275,12 +264,10 @@ export function hexFromProps(p: Record<string, unknown>): CrashHex {
   };
   const ped = n('ped');
   const bike = n('bike');
-  const { label, area } = crashLabel(p);
   return {
-    hex: String(p.hex ?? ''),
-    label,
-    area,
-    osmLabel: str(p.label_osm) || undefined,
+    site: String(p.site ?? ''),
+    label: String(p.label ?? 'Unnamed intersection'),
+    neighborhood: p.neighborhood ? String(p.neighborhood) : '',
     lat: n('lat'),
     lng: n('lng'),
     ped,
@@ -304,13 +291,8 @@ export function crashSpotsFromGeojson(
   if (!fc) return [];
   const needle = q.trim().toLowerCase();
   const rows = fc.features
-    .map((f) => (f.properties ?? {}) as Record<string, unknown>)
-    .filter(
-      (p) =>
-        !needle ||
-        [crashLabel(p).label, p.label, p.label_csv, p.label_osm].some((v) => str(v).toLowerCase().includes(needle)),
-    )
-    .map(hexFromProps);
+    .map((f) => hexFromProps((f.properties ?? {}) as Record<string, unknown>))
+    .filter((h) => !needle || h.label.toLowerCase().includes(needle) || h.neighborhood.toLowerCase().includes(needle));
   rows.sort((a, b) =>
     sort === 'model' ? b.estimatePerYear - a.estimatePerYear : b.pedBike - a.pedBike || b.total - a.total,
   );

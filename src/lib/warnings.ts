@@ -9,7 +9,7 @@ export type Hazard = { id: string; type: string; label: string; openedAt: string
 export type Ramp = { id: string; condition: string; lat: number; lon: number };
 export type WarningData = { crashSpots: CrashSpot[]; hazards: Hazard[]; ramps: Ramp[] };
 export type WalkWarnings = {
-  crashAreas: { hex: string; label: string; pedBike: number }[];
+  crashAreas: { site: string; label: string; pedBike: number }[];
   /** Nearest hazards, capped at MAX_HAZARDS; hazardTotal is the uncapped count (after de-duplication). */
   hazards: Hazard[];
   /** Nearest ramps that are poor condition and/or lipped, capped at MAX_RAMPS; read `condition` per item. */
@@ -23,7 +23,8 @@ export type WalkWarnings = {
   lipOnlyRampTotal: number;
 };
 
-export const CRASH_RADIUS_M = 120;
+// Crash spots are intersection points (crash-risk.geojson), so they must sit on the walk itself.
+export const CRASH_RADIUS_M = 60;
 export const MAX_CRASH_AREAS = 5;
 export const MAX_HAZARDS = 10;
 export const MAX_RAMPS = 10;
@@ -123,9 +124,9 @@ export function walkWarnings(
       (s) =>
         s.pedBike > 0 && nearCrash(s.lng, s.lat) && distanceToLineM(s.lng, s.lat, line) <= CRASH_RADIUS_M,
     )
-    .sort((a, b) => b.pedBike - a.pedBike || a.hex.localeCompare(b.hex))
+    .sort((a, b) => b.pedBike - a.pedBike || a.site.localeCompare(b.site))
     .slice(0, MAX_CRASH_AREAS)
-    .map((s) => ({ hex: s.hex, label: s.label, pedBike: s.pedBike }));
+    .map((s) => ({ site: s.site, label: s.label, pedBike: s.pedBike }));
 
   const oldest = now - HAZARD_MAX_AGE_DAYS * DAY_MS;
   const nearHazards: { h: Hazard; d: number }[] = [];

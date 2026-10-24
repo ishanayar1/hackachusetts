@@ -3,7 +3,7 @@ import type { Station, StationStatusRow } from './api';
 import { stepFreeState } from './format';
 
 export type WalkWarnings = {
-  crashAreas: { hex: string; label: string; pedBike: number }[];
+  crashAreas: { site: string; label: string; pedBike: number }[];
   /** Capped list; hazardTotal is the uncapped count. */
   hazards: { id: string; type: string; label: string; openedAt: string; lat: number; lon: number }[];
   /** Capped list of ramps in poor condition and/or with a lip at the edge (read `condition`). */

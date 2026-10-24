@@ -184,7 +184,7 @@ export default function LastMileApp() {
             {
               id: 'crash',
               label: 'Crash spots',
-              content: <CrashSpots selectedHex={selectedHex?.hex ?? null} onSelectHex={selectHexFromList} />,
+              content: <CrashSpots selectedHex={selectedHex?.site ?? null} onSelectHex={selectHexFromList} />,
             },
           ]}
         />
@@ -195,14 +195,14 @@ export default function LastMileApp() {
         </footer>
       </main>
 
-      <div className="app-map" role="region" aria-label="Map of subway stations and recorded crash areas">
+      <div className="app-map" role="region" aria-label="Map of subway stations and recorded crash intersections">
         <MapClient
           stations={stationsFc}
           route={routeFc}
           walk={walkFc}
           crashMode={crashMode}
           selectedStationId={selectedStationId}
-          selectedHex={selectedHex?.hex ?? null}
+          selectedHex={selectedHex?.site ?? null}
           flyTo={flyTo}
           onSelectStation={selectStation}
           onSelectHex={selectHexFromMap}
