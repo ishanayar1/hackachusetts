@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "MBTA client tests on save",
+  "description": "Runs the MBTA client and alert tests when the MBTA layer is saved. Guards the filter[activity]=ALL rule: without it elevator alerts silently disappear.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["src/lib/mbta/**/*.ts", "src/lib/server/mbta.ts"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npx vitest run tests/client.test.ts tests/alerts.test.ts tests/live.test.ts"
+  }
+}

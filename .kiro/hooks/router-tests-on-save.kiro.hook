@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Router tests on save",
+  "description": "Runs the step-free router unit and property tests when the router or its tests are saved. Enforces: never route through a closed elevator, ramp or lift.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["src/lib/router.ts", "src/lib/lastmile-service.ts", "tests/router*.test.ts"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "npx vitest run tests/router.property.test.ts tests/router.unit.test.ts tests/service.test.ts"
+  }
+}

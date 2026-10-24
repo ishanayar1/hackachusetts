@@ -11,7 +11,7 @@ teammate must fill them in or delete them before we submit.
 |---|---|---|
 | Kiro tools | **TODO (team)**. The repo holds Kiro CLI and Kiro Crew settings | `.kiro/settings/cli.json`, `.kiro/settings/.kirocrew-cli-settings.lock` |
 | Spec-driven vs vibe coding | 3 specs in Kiro's requirements / design / tasks format. **TODO (team)**: say how much was vibe coded | `.kiro/specs/*/` |
-| Hooks | None committed yet. **TODO (team)** | `.kiro/hooks/` does not exist |
+| Hooks | 4 hooks: router tests on save, MBTA client tests on save, accessibility review on UI save, secret check before writes | `.kiro/hooks/*.kiro.hook` |
 | Steering | 3 steering files, always included | `.kiro/steering/product.md`, `tech.md`, `structure.md` |
 | MCP | Our own MBTA MCP server with 4 tools, registered for Kiro | `mcp/mbta/server.ts`, `.kiro/settings/mcp.json` |
 | Property-based tests | 5 fast-check properties on the step-free router, 300 runs each | `tests/router.property.test.ts` |
@@ -56,16 +56,20 @@ property 'never route through a closed elevator' came first); the map UI was vib
 
 ## Hooks
 
-There are no hook files in the repo. `.kiro/hooks/` does not exist.
+Four hooks in `.kiro/hooks/`:
 
-The plan (`docs/lastmile-plan.md`, Build plan) lists three hooks we meant to add:
+| Hook | Trigger | Action |
+|---|---|---|
+| `router-tests-on-save` | Save `src/lib/router.ts`, `src/lib/lastmile-service.ts` or a router test | Runs the router unit, property and service tests (never route through a closed elevator, ramp or lift) |
+| `mbta-alerts-tests-on-save` | Save a file under `src/lib/mbta/` or `src/lib/server/mbta.ts` | Runs the client, alerts and live tests, which include the `filter[activity]=ALL` check |
+| `a11y-check-on-ui-save` | Save a `.tsx` file under `src/components/` or `src/app/` | Agent runs `npm run lint` and reviews the file against the accessibility rules (labels, keyboard, no color-only status, aria-live, list parity) |
+| `block-secrets-on-write` | Before any file write | Agent refuses to write keys or tokens and points to `.env` |
 
-1. Run the router tests when `src/lib/router.ts` is saved.
-2. Run an axe-core accessibility check when a UI file is saved.
-3. Block commits that contain API keys.
+Limits: the accessibility hook uses the linter (`eslint-config-next` includes jsx-a11y) and an
+agent review, not axe-core, which needs a running browser. The secrets hook runs before writes, not
+before commits, because Kiro hooks have no commit trigger; `.env` stays gitignored as the backstop.
 
-**TODO (team):** if anyone made hooks in Kiro, commit them under `.kiro/hooks/` and
-describe them here. If not, remove this section or say "we did not use hooks".
+**TODO (team):** say which of these fired during the build, with a screenshot.
 
 ## Steering
 

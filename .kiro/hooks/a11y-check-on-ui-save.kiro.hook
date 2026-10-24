@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "name": "Accessibility check on UI save",
+  "description": "Reviews a saved UI file against the app's accessibility rules and runs the linter (eslint-config-next includes jsx-a11y).",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["src/components/**/*.tsx", "src/app/**/*.tsx"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A UI file was saved. Run `npm run lint` and fix any jsx-a11y errors. Then review the saved file for: every control has a visible or aria label; keyboard use works and focus order is logical; status is never shown by color alone (icon or text too); alerts that change live sit in an aria-live region; touch targets are large; motion respects prefers-reduced-motion; whatever the map shows is also available in a text list. Report each problem with the line, and fix it unless the change is a design decision."
+  }
+}
