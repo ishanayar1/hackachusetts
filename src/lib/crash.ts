@@ -1,11 +1,14 @@
-// Recorded crash history per H3 cell (from crash-risk/risk.geojson -> public/data/crash-risk.geojson).
+// Recorded crash history per street intersection (from crash-risk/risk.geojson -> public/data/crash-risk.geojson).
 // Framework-agnostic and pure: used by /api/crash/locations and the tests.
 // Wording rule (docs/lastmile-plan.md): these are "recorded crashes", not a prediction or "risk".
 // `estimatePerYear` is the teammate model's yearly estimate (risk_yr); it is only used when sort=model.
 
 export type CrashSpot = {
-  hex: string;
+  /** Intersection id, e.g. "ALBANY ST & MASSACHUSETTS AVE" (" #2" when the name pair repeats elsewhere). */
+  site: string;
   label: string;
+  /** Neighborhood name, '' when unknown. */
+  neighborhood: string;
   lat: number;
   lng: number;
   /** Recorded pedestrian + bike crashes. */
@@ -36,14 +39,14 @@ function count(v: unknown): number {
   return Math.max(0, Math.round(num(v)));
 }
 
-/** GeoJSON FeatureCollection (crash-risk.geojson) -> CrashSpot[]. Skips features without a hex id or valid coordinates. */
+/** GeoJSON FeatureCollection (crash-risk.geojson) -> CrashSpot[]. Skips features without a site id or valid coordinates. */
 export function toCrashSpots(fc: unknown): CrashSpot[] {
   const features = (fc as { features?: unknown } | null)?.features;
   if (!Array.isArray(features)) return [];
   const out: CrashSpot[] = [];
   for (const f of features) {
     const p = (f as { properties?: Record<string, unknown> } | null)?.properties;
-    if (!p || typeof p.hex !== 'string' || !p.hex) continue;
+    if (!p || typeof p.site !== 'string' || !p.site) continue;
     const lat = typeof p.lat === 'number' ? p.lat : Number(p.lat);
     const lng = typeof p.lng === 'number' ? p.lng : Number(p.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) continue;
@@ -52,24 +55,28 @@ export function toCrashSpots(fc: unknown): CrashSpot[] {
     const bike = count(p.bike);
     const mv = count(p.mv);
     const total = Math.max(count(p.total_crashes), ped + bike + mv);
-    out.push({ hex: p.hex, label, lat, lng, pedBike: ped + bike, ped, bike, mv, total, estimatePerYear: num(p.risk_yr) });
+    const neighborhood = typeof p.neighborhood === 'string' ? p.neighborhood.trim() : '';
+    out.push({
+      site: p.site, label, neighborhood, lat, lng,
+      pedBike: ped + bike, ped, bike, mv, total, estimatePerYear: num(p.risk_yr),
+    });
   }
   return out;
 }
 
 const byRecorded = (a: CrashSpot, b: CrashSpot) =>
-  b.pedBike - a.pedBike || b.total - a.total || a.hex.localeCompare(b.hex);
+  b.pedBike - a.pedBike || b.total - a.total || a.site.localeCompare(b.site);
 const byModel = (a: CrashSpot, b: CrashSpot) =>
   b.estimatePerYear - a.estimatePerYear || byRecorded(a, b);
 
-/** Filter by label (case-insensitive substring), sort, then cut to limit. `count` is the number of matches before the limit. */
+/** Filter by label or neighborhood (case-insensitive substring), sort, then cut to limit. `count` is the number of matches before the limit. */
 export function queryCrashSpots(
   spots: readonly CrashSpot[],
   opts: Partial<CrashQuery> = {},
 ): { count: number; results: CrashSpot[] } {
   const q = (opts.q ?? '').trim().toLowerCase();
   const limit = Math.min(CRASH_LIMIT_MAX, Math.max(1, Math.floor(opts.limit ?? CRASH_LIMIT_DEFAULT)));
-  const matches = q ? spots.filter((s) => s.label.toLowerCase().includes(q)) : [...spots];
+  const matches = q ? spots.filter((s) => s.label.toLowerCase().includes(q) || s.neighborhood.toLowerCase().includes(q)) : [...spots];
   matches.sort(opts.sort === 'model' ? byModel : byRecorded);
   return { count: matches.length, results: matches.slice(0, limit) };
 }
