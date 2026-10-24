@@ -1,6 +1,6 @@
 // GET /api/station/place-xxxx -> station, facilities (with closed flag), step-free status, parking, alerts.
 import { connection } from 'next/server';
-import { getLiveAlerts, stationDetail } from '@/lib/lastmile-service';
+import { getAlertsOrDemo, stationDetail } from '@/lib/lastmile-service';
 import { envelope, getParentOf, jsonWithCache, loadDemoAlerts, unavailable } from '@/lib/server/mbta';
 import { getStaticData } from '@/lib/server/static-data';
 import { STATION_ID_RE } from '@/lib/static-data-fs';
@@ -19,7 +19,7 @@ export async function GET(request: Request, ctx: { params: Promise<{ id: string 
   }
   if (!data.stationById.has(id)) return Response.json({ error: 'unknown station' }, { status: 404 });
   try {
-    const live = await getLiveAlerts(getParentOf(), () => loadDemoAlerts(new URL(request.url).origin));
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(new URL(request.url).origin));
     const detail = stationDetail(data, id, live.alerts, live.closedFacilityIds)!;
     return jsonWithCache(envelope(detail, live.result), 30, 60);
   } catch {

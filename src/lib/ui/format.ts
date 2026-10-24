@@ -1,5 +1,13 @@
 // Plain-words formatting helpers for the panel. Pure functions.
-import type { CrashHex, CrashSpot, Station, StationStatusRow } from './api';
+import type {
+  BlockedPlatform,
+  CrashHex,
+  CrashSpot,
+  NormalizedAlert,
+  Prediction,
+  Station,
+  StationStatusRow,
+} from './api';
 
 export const ROUTE_NAMES: Record<string, string> = {
   Red: 'Red Line',
@@ -23,12 +31,23 @@ export const ROUTE_COLORS: Record<string, string> = {
 };
 export const routeName = (r: string) => ROUTE_NAMES[r] ?? r;
 
-/** Map / legend status: 'yes' step-free now, 'no' not step-free now, 'unknown' no data. */
-export type StepFreeState = 'yes' | 'no' | 'unknown';
+/**
+ * Map / legend status: 'yes' step-free now, 'partial' some platform (direction) blocked but at least one
+ * works, 'no' not step-free now, 'unknown' no data.
+ */
+export type StepFreeState = 'yes' | 'partial' | 'no' | 'unknown';
 
-export function stepFreeState(station: Station, live: StationStatusRow | undefined): StepFreeState {
+type LiveStatus = Pick<StationStatusRow, 'stepFree' | 'approximate' | 'blockedBy' | 'partial'>;
+
+/** Partly step-free: server flag when present, else "step-free but something on a step-free path is closed". */
+export function isPartial(live: LiveStatus | undefined): boolean {
+  if (!live || !live.stepFree) return false;
+  return live.partial ?? (live.blockedBy?.length ?? 0) > 0;
+}
+
+export function stepFreeState(station: Station, live: LiveStatus | undefined): StepFreeState {
   if (live) {
-    if (live.stepFree) return 'yes';
+    if (live.stepFree) return isPartial(live) ? 'partial' : 'yes';
     if (live.approximate && station.wheelchair === 0) return 'unknown';
     return 'no';
   }
@@ -39,9 +58,32 @@ export function stepFreeState(station: Station, live: StationStatusRow | undefin
 
 export const STATE_TEXT: Record<StepFreeState, string> = {
   yes: 'Step-free now',
+  partial: 'Partly step-free now',
   no: 'Not step-free right now',
   unknown: 'No step-free data',
 };
+
+/**
+ * "Partly step-free: Wonderland platform blocked by Revere Beach Elevator 885" (one line per blocked platform).
+ * Falls back to the station's blockedBy list when the server does not send blockedPlatforms.
+ */
+export function partialLines(
+  blockedPlatforms: BlockedPlatform[] | undefined,
+  blockedBy: string[],
+  facilityName: (id: string) => string,
+): string[] {
+  const rows = blockedPlatforms ?? [];
+  if (rows.length > 0) {
+    return rows.map((p) => {
+      const name = (p.name ?? '').trim();
+      const platform = !name ? 'One platform' : /platform/i.test(name) ? name : `${name} platform`;
+      const by = (p.facilityIds ?? []).map(facilityName);
+      return `Partly step-free: ${platform} blocked${by.length ? ` by ${by.join(', ')}` : ''}`;
+    });
+  }
+  if (blockedBy.length > 0) return [`Partly step-free: one platform blocked by ${blockedBy.map(facilityName).join(', ')}`];
+  return ['Partly step-free: one platform has no step-free path right now'];
+}
 
 /** "door-dwnxg-101arch" -> "101 Arch entrance". Used when pathways names are not loaded. */
 export function cleanEntranceId(id: string, kind: 'entrance' | 'exit' = 'entrance'): string {
@@ -61,17 +103,38 @@ export function cleanEntranceId(id: string, kind: 'entrance' | 'exit' = 'entranc
   return `${rest} ${kind}${elevator ? ' (elevator)' : ''}`;
 }
 
-export function formatTime(iso: string | null | undefined): string {
+const NY = 'America/New_York';
+const nyYear = (d: Date) => d.toLocaleString('en-US', { year: 'numeric', timeZone: NY });
+
+/** "Oct 24, 1:30 PM"; adds the year when it is not the current year ("Mar 15, 2022, 10:13 AM"). */
+export function formatTime(iso: string | null | undefined, now: Date = new Date()): string {
   if (!iso) return '';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
+    ...(nyYear(d) !== nyYear(now) ? { year: 'numeric' as const } : {}),
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: 'America/New_York',
+    timeZone: NY,
   });
+}
+
+/** MBTA sends Unix-epoch placeholder periods for alerts with no announced dates. */
+const PLACEHOLDER_BEFORE = Date.parse('1970-01-02T12:00:00Z');
+
+/** false when the alert's dates are placeholders (server flag, or an epoch start from an older server). */
+export function alertDatesKnown(a: Pick<NormalizedAlert, 'datesKnown' | 'activePeriods'>): boolean {
+  if (a.datesKnown !== undefined) return a.datesKnown;
+  const start = a.activePeriods?.[0]?.start;
+  const t = start ? Date.parse(start) : NaN;
+  return !(Number.isFinite(t) && t < PLACEHOLDER_BEFORE);
+}
+
+/** Active now. An alert without announced dates counts as active unless MBTA says it is upcoming. */
+export function alertActive(a: Pick<NormalizedAlert, 'activeNow' | 'datesKnown' | 'activePeriods' | 'lifecycle'>): boolean {
+  return a.activeNow || (!alertDatesKnown(a) && a.lifecycle !== 'UPCOMING');
 }
 
 export function formatClock(iso: string | null | undefined): string {
@@ -79,6 +142,42 @@ export function formatClock(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' });
+}
+
+export type TrainGroup = { key: string; routeId: string; directionId: 0 | 1; trains: Prediction[] };
+
+/**
+ * Next trains per route + direction (subway only), the next `perGroup` in each, groups ordered by their
+ * soonest train. Replaces a global top-N, which hid whole lines at busy stations.
+ */
+export function nextTrainGroups(preds: readonly Prediction[], perGroup = 2): TrainGroup[] {
+  const groups = new Map<string, TrainGroup>();
+  const sorted = preds
+    .filter((p) => p.routeId in ROUTE_NAMES && Number.isFinite(p.minutesAway))
+    .slice()
+    .sort((a, b) => a.minutesAway - b.minutesAway || a.time.localeCompare(b.time));
+  for (const p of sorted) {
+    const key = `${p.routeId}|${p.directionId}`;
+    let g = groups.get(key);
+    if (!g) groups.set(key, (g = { key, routeId: p.routeId, directionId: p.directionId, trains: [] }));
+    if (g.trains.length < perGroup) g.trains.push(p);
+  }
+  return [...groups.values()];
+}
+
+export function minutesText(t: Pick<Prediction, 'minutesAway' | 'approximate'>): string {
+  return t.minutesAway === 0 ? 'now' : `${t.approximate ? 'about ' : ''}${t.minutesAway} min`;
+}
+
+/** "any Green Line B, C or D train" when several branches serve a leg, else "the Red Line". */
+export function legRoutesText(route: string, alsoRoutes: readonly string[] | undefined): string {
+  const all = [...new Set([route, ...(alsoRoutes ?? [])])];
+  if (all.length < 2) return `the ${routeName(route)}`;
+  const join = (xs: string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} or ${xs[xs.length - 1]}`);
+  if (all.every((r) => /^Green-[A-Z]$/.test(r))) {
+    return `any Green Line ${join(all.map((r) => r.slice(-1)).sort())} train`;
+  }
+  return `any ${join(all.map(routeName))} train`;
 }
 
 export const ACCESS_EFFECTS = new Set(['ELEVATOR_CLOSURE', 'ESCALATOR_CLOSURE', 'ACCESS_ISSUE']);
@@ -125,6 +224,8 @@ export function facilityTypeWord(type: string): string {
       return 'portable boarding lift';
     case 'BRIDGE_PLATE':
       return 'bridge plate';
+    case 'ELEVATED_SUBPLATFORM':
+      return 'mini-high platform';
     default:
       return 'facility';
   }

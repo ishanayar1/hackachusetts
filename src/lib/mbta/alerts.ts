@@ -31,13 +31,36 @@ function uniq<T>(xs: Iterable<T>): T[] {
   return [...new Set(xs)];
 }
 
+/** Anything starting on or before this is MBTA's placeholder period (Unix epoch shown as 1969-12-31 19:00 EST). */
+const PLACEHOLDER_BEFORE_MS = Date.parse('1970-01-02T00:00:00Z');
+
+/** A placeholder active_period: starts at/near the Unix epoch, or has zero length (start == end). */
+export function isPlaceholderPeriod(p: { start: string; end: string | null }): boolean {
+  const s = Date.parse(p.start);
+  if (!Number.isNaN(s) && s <= PLACEHOLDER_BEFORE_MS) return true;
+  if (p.end != null) {
+    const e = Date.parse(p.end);
+    if (!Number.isNaN(s) && !Number.isNaN(e) && s === e) return true;
+  }
+  return false;
+}
+
+/** Parking / premium-parking (SpotHero) / amenity notices: informational, not service disruptions. */
+const INFORMATIONAL_RE = /\b(parking|spothero|amenit(?:y|ies))\b/i;
+
+export function isInformationalNotice(effect: string, header: string): boolean {
+  return effect === 'NOTICE' && INFORMATIONAL_RE.test(header);
+}
+
 export function isActiveAt(
   a: Pick<NormalizedAlert, 'activePeriods' | 'lifecycle'>,
   now: Date,
 ): boolean {
   const t = now.getTime();
-  if (!a.activePeriods.length) return a.lifecycle !== 'UPCOMING';
-  return a.activePeriods.some((p) => {
+  const periods = a.activePeriods.filter((p) => !isPlaceholderPeriod(p));
+  // No real period (none sent, or only placeholders): lifecycle decides. NEW/ONGOING active, UPCOMING not.
+  if (!periods.length) return a.lifecycle !== 'UPCOMING';
+  return periods.some((p) => {
     const s = Date.parse(p.start);
     const e = p.end ? Date.parse(p.end) : Infinity;
     return (Number.isNaN(s) || s <= t) && t < e;
@@ -67,19 +90,25 @@ export function normalizeAlerts(json: any, parentOf: ParentOf = identityParent, 
       if (Array.isArray(e.activities)) for (const act of e.activities) activities.add(String(act));
     }
     const header: string = a.header ?? '';
+    const effect: string = a.effect ?? 'UNKNOWN_EFFECT';
+    const rawPeriods: { start: string; end: string | null }[] = (Array.isArray(a.active_period) ? a.active_period : [])
+      .filter((p: any) => p && p.start)
+      .map((p: any) => ({ start: String(p.start), end: p.end ? String(p.end) : null }));
+    // Drop MBTA placeholder periods so the UI never shows "Since Dec 31, 7:00 PM" (1969).
+    const periods = rawPeriods.filter((p) => !isPlaceholderPeriod(p));
     const alert: NormalizedAlert = {
       id: String(row.id),
-      effect: a.effect ?? 'UNKNOWN_EFFECT',
+      effect,
       header,
       shortHeader: a.short_header || header,
       description: a.description || null,
       url: a.url || null,
       severity: typeof a.severity === 'number' ? a.severity : 0,
       lifecycle: a.lifecycle ?? 'ONGOING',
-      activePeriods: (Array.isArray(a.active_period) ? a.active_period : [])
-        .filter((p: any) => p && p.start)
-        .map((p: any) => ({ start: String(p.start), end: p.end ? String(p.end) : null })),
+      activePeriods: periods,
       activeNow: false,
+      datesKnown: !(rawPeriods.length > 0 && periods.length === 0),
+      informational: isInformationalNotice(effect, `${header} ${a.short_header ?? ''}`),
       stationIds: uniq(stations),
       routeIds: uniq(routes),
       facilityIds: uniq(facilities),

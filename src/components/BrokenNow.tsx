@@ -2,7 +2,7 @@
 // "Broken now": live accessibility alerts first, then other subway disruptions.
 import { useMemo, useState } from 'react';
 import type { NormalizedAlert, Station } from '@/lib/ui/api';
-import { ACCESS_EFFECTS, effectLabel, formatTime } from '@/lib/ui/format';
+import { ACCESS_EFFECTS, alertActive, alertDatesKnown, effectLabel, formatTime } from '@/lib/ui/format';
 import { useAlerts } from '@/lib/ui/hooks';
 import { Notice, SourceBadge } from './ui';
 
@@ -47,6 +47,8 @@ function AlertItem({
   onSelectStation: (id: string) => void;
 }) {
   const period = alert.activePeriods[0];
+  const datesKnown = alertDatesKnown(alert);
+  const active = alertActive(alert);
   const names = alert.stationIds.map((id) => ({ id, name: stationsById.get(id)?.name })).filter((s) => s.name);
   return (
     <li className="rounded-md border border-slate-300 bg-white p-3">
@@ -55,7 +57,7 @@ function AlertItem({
         <div className="min-w-0">
           <p className="font-semibold text-slate-900">
             {effectLabel(alert.effect)}
-            {!alert.activeNow && <span className="font-normal text-slate-700"> (not active right now)</span>}
+            {!active && <span className="font-normal text-slate-700"> (not active right now)</span>}
           </p>
           {names.length > 0 && (
             <p className="text-sm text-slate-800">
@@ -75,7 +77,8 @@ function AlertItem({
             </p>
           )}
           <p className="mt-1 text-sm text-slate-800">{alert.shortHeader || alert.header}</p>
-          {period && (
+          {!datesKnown && <p className="mt-1 text-xs text-slate-700">Start date not announced</p>}
+          {datesKnown && period && (
             <p className="mt-1 text-xs text-slate-700">
               {period.start && <>Since {formatTime(period.start)}</>}
               {period.end && <> · Until {formatTime(period.end)}</>}
@@ -98,9 +101,10 @@ export default function BrokenNow({
   const [includeEscalators, setIncludeEscalators] = useState(true);
 
   const { access, other } = useMemo(() => {
-    const alerts = [...(data?.data.alerts ?? [])].sort(
-      (a, b) => Number(b.activeNow) - Number(a.activeNow) || b.severity - a.severity,
-    );
+    // Informational notices (parking, amenities) are not disruptions: left out of the lists and counts.
+    const alerts = (data?.data.alerts ?? [])
+      .filter((a) => !a.informational)
+      .sort((a, b) => Number(alertActive(b)) - Number(alertActive(a)) || b.severity - a.severity);
     return {
       access: alerts.filter(
         (a) => ACCESS_EFFECTS.has(a.effect) && (includeEscalators || a.effect !== 'ESCALATOR_CLOSURE'),
@@ -109,7 +113,7 @@ export default function BrokenNow({
     };
   }, [data, includeEscalators]);
 
-  const elevators = access.filter((a) => a.effect === 'ELEVATOR_CLOSURE' && a.activeNow).length;
+  const elevators = access.filter((a) => a.effect === 'ELEVATOR_CLOSURE' && alertActive(a)).length;
   const summary = data
     ? `${access.length} accessibility ${access.length === 1 ? 'alert' : 'alerts'} (${elevators} elevator${
         elevators === 1 ? '' : 's'

@@ -2,9 +2,16 @@
 // Model: platforms are joined by directed RideEdges (network.json); inside a station the
 // pathway graph (pathways.json) decides whether a wheelchair user can get from a street
 // entrance to a platform, or between two platforms, with the currently closed facilities removed.
-import type { Network, PathwayEdge, RideEdge, RouteId, Station, StationPathways } from '@/lib/mbta/types';
+import { SUBWAY_ROUTES } from '@/lib/mbta/types';
+import type { Facility, Network, PathwayEdge, RideEdge, RouteId, Station, StationPathways } from '@/lib/mbta/types';
 
-export type StaticData = { stations: Station[]; network: Network; pathways: Record<string, StationPathways> };
+export type StaticData = {
+  stations: Station[];
+  network: Network;
+  pathways: Record<string, StationPathways>;
+  /** Optional: mini-high platforms (ELEVATED_SUBPLATFORM) and mobile lifts with platformIds gate boarding at those platforms. */
+  facilities?: Facility[];
+};
 
 /** 'in' = entrance -> platform, 'out' = platform -> entrance, 'both' = both directions. */
 export type AccessDir = 'in' | 'out' | 'both';
@@ -18,6 +25,13 @@ export type RideLeg = {
   minutes: number;
   fromPlatform: string;
   toPlatform: string;
+  /**
+   * Terminal station name(s) of every train that serves this leg, e.g. "Ashmont/Braintree" on the shared
+   * Red trunk (also when the leg ends at JFK/UMass), or the merged Green branch terminals on the trunk.
+   */
+  towards?: string;
+  /** Other routes that serve the same stations in the same order, e.g. other Green branches on the trunk. */
+  alsoRoutes?: RouteId[];
 };
 export type TransferLeg = {
   kind: 'transfer';
@@ -43,16 +57,32 @@ export type RouteOk = {
   /** Step-free street entrance to use at the origin, and exit at the destination (null when approximate). */
   originEntranceId: string | null;
   destinationExitId: string | null;
+  /** Display names of those pathway nodes, when the GTFS data names them. */
+  originEntranceName?: string;
+  destinationExitName?: string;
+  /** The same nodes with coordinates (GTFS stop lat/lon), so walks can end at that door. */
+  originEntrance?: EntrancePoint;
+  destinationExit?: EntrancePoint;
 };
+export type EntrancePoint = { id: string; name: string; lat: number; lon: number };
 export type RouteFail = { ok: false; reason: RouteFailReason; alternatives: Alternative[] };
 export type RouteResult = RouteOk | RouteFail;
 
 export type StationStatus = {
+  /** At least one platform is step-free (see `partial`). */
   stepFree: boolean;
+  /** stepFree, but some platform (direction) is not step-free right now. */
+  partial: boolean;
   approximate: boolean;
   platforms: Record<string, boolean>;
   blockedBy: string[];
+  /**
+   * Platforms that are not step-free now, with the closed facilities whose return would restore each.
+   * Lists closure-blocked platforms, and every non-step-free platform of a partial station.
+   */
+  blockedPlatforms: BlockedPlatform[];
 };
+export type BlockedPlatform = { platformId: string; name: string; facilityIds: string[] };
 
 export type AccessInfo = { ok: boolean; approximate: boolean };
 
@@ -69,6 +99,9 @@ type Index = {
   stationById: Map<string, Station>;
   platformsByStation: Map<string, string[]>;
   ridesFrom: Map<string, RideEdge[]>;
+  /** platformId -> boarding aids there. Only platforms with a mini-high platform are gated. */
+  boarding: Map<string, { subplatform: boolean; ids: string[] }>;
+  boardingIds: Set<string>;
 };
 const indexCache = new WeakMap<StaticData, Index>();
 
@@ -94,9 +127,30 @@ function index(data: StaticData): Index {
     list.push(e);
     ridesFrom.set(e.from, list);
   }
-  idx = { stationById, platformsByStation, ridesFrom };
+  // A platform served by a mini-high platform (high-floor Mattapan trolleys, some Green Line stops) is
+  // step-free only while that subplatform, or a mobile lift serving the same platform, is in service.
+  // Platforms with mobile lifts only are not gated: low-floor cars board level there.
+  const boarding = new Map<string, { subplatform: boolean; ids: string[] }>();
+  const boardingIds = new Set<string>();
+  for (const f of data.facilities ?? []) {
+    if (f.type !== 'ELEVATED_SUBPLATFORM' && f.type !== 'PORTABLE_BOARDING_LIFT') continue;
+    boardingIds.add(f.id);
+    for (const pid of f.platformIds ?? []) {
+      const b = boarding.get(pid) ?? { subplatform: false, ids: [] };
+      b.subplatform = b.subplatform || f.type === 'ELEVATED_SUBPLATFORM';
+      b.ids.push(f.id);
+      boarding.set(pid, b);
+    }
+  }
+  idx = { stationById, platformsByStation, ridesFrom, boarding, boardingIds };
   indexCache.set(data, idx);
   return idx;
+}
+
+/** True when the platform needs a mini-high platform to board step-free and every boarding aid there is closed. */
+function boardingBlocked(idx: Index, platformId: string, closed: ReadonlySet<string>): boolean {
+  const b = idx.boarding.get(platformId);
+  return !!b && b.subplatform && b.ids.every((id) => closed.has(id));
 }
 
 const adjCache = new WeakMap<StationPathways, Map<string, PathwayEdge[]>>();
@@ -257,14 +311,27 @@ function entranceNodes(sp: StationPathways, st: Station): string[] {
   return [...out];
 }
 
+/**
+ * Entrances a wheelchair user can use: any not flagged 2 (not accessible), plus a door flagged 2 that is
+ * the top of an elevator pathway (mode 5 with a facility id). GTFS flags Copley's Boylston St door 2
+ * because of its stairs, yet elevator 976 (the only step-free way to the eastbound platform) ends there.
+ */
+const elevatorEndsCache = new WeakMap<StationPathways, Set<string>>();
 function stepFreeEntrances(sp: StationPathways, st: Station): string[] {
-  return entranceNodes(sp, st).filter((id) => sp.nodes[id]?.wheelchair !== 2);
+  let ends = elevatorEndsCache.get(sp);
+  if (!ends) {
+    ends = new Set();
+    for (const e of sp.edges) if (e.mode === 5 && e.facilityId) ends.add(e.from).add(e.to);
+    elevatorEndsCache.set(sp, ends);
+  }
+  const elevatorTop = ends;
+  return entranceNodes(sp, st).filter((id) => sp.nodes[id]?.wheelchair !== 2 || elevatorTop.has(id));
 }
 
 /** Fallback when a station has no pathway data: trust the GTFS flag unless every facility there is closed. */
-function fallbackOk(st: Station, closed: ReadonlySet<string>): boolean {
+function fallbackOk(st: Station, closed: ReadonlySet<string>, boardingIds: ReadonlySet<string> = EMPTY): boolean {
   if (st.wheelchair !== 1) return false;
-  const f = st.facilityIds ?? [];
+  const f = (st.facilityIds ?? []).filter((id) => !boardingIds.has(id)); // boarding aids are checked per platform
   return !(f.length > 0 && f.every((id) => closed.has(id)));
 }
 
@@ -278,10 +345,25 @@ function accessDetail(
   dir: AccessDir,
   withPaths: boolean,
 ): AccessDetail {
+  const idx = index(data);
+  const d = streetDetail(data, st, platformId, closed, dir, withPaths, idx.boardingIds);
+  if (d.ok && boardingBlocked(idx, platformId, closed)) return { ok: false, approximate: d.approximate, inPath: null, outPath: null };
+  return d;
+}
+
+function streetDetail(
+  data: StaticData,
+  st: Station,
+  platformId: string,
+  closed: ReadonlySet<string>,
+  dir: AccessDir,
+  withPaths: boolean,
+  boardingIds: ReadonlySet<string>,
+): AccessDetail {
   const sp = usablePathways(data, st.id);
   const none = { inPath: null, outPath: null };
-  if (!sp || !hasOwn(sp.nodes, platformId)) return { ok: fallbackOk(st, closed), approximate: true, ...none };
-  if (entranceNodes(sp, st).length === 0) return { ok: fallbackOk(st, closed), approximate: true, ...none };
+  if (!sp || !hasOwn(sp.nodes, platformId)) return { ok: fallbackOk(st, closed, boardingIds), approximate: true, ...none };
+  if (entranceNodes(sp, st).length === 0) return { ok: fallbackOk(st, closed, boardingIds), approximate: true, ...none };
   const ents = stepFreeEntrances(sp, st);
   if (!ents.length) return { ok: false, approximate: false, ...none };
   let inPath: StationPath | null = null;
@@ -341,8 +423,9 @@ function closedAtStation(data: StaticData, st: Station, closed: ReadonlySet<stri
 }
 
 export function stationStatus(data: StaticData, stationId: string, closed: ReadonlySet<string> = EMPTY): StationStatus {
-  const st = index(data).stationById.get(stationId);
-  if (!st) return { stepFree: false, approximate: false, platforms: {}, blockedBy: [] };
+  const idx = index(data);
+  const st = idx.stationById.get(stationId);
+  if (!st) return { stepFree: false, partial: false, approximate: false, platforms: {}, blockedBy: [], blockedPlatforms: [] };
   let plats = platformsOf(data, stationId);
   if (!plats.length) plats = st.platformIds ?? [];
   const closedHere = closedAtStation(data, st, closed);
@@ -359,29 +442,38 @@ export function stationStatus(data: StaticData, stationId: string, closed: Reado
   };
 
   if (!plats.length) {
-    const ok = fallbackOk(st, closed);
-    const blockedBy = !ok && fallbackOk(st, EMPTY) ? closedHere : [];
-    return { stepFree: ok, approximate: true, platforms: {}, blockedBy };
+    const ok = fallbackOk(st, closed, idx.boardingIds);
+    const blockedBy = !ok && fallbackOk(st, EMPTY, idx.boardingIds) ? closedHere : [];
+    return { stepFree: ok, partial: false, approximate: true, platforms: {}, blockedBy, blockedPlatforms: [] };
   }
 
   const { res: platforms, approximate } = evalAll(closed);
   const stepFree = Object.values(platforms).some(Boolean);
   const blockedPlats = plats.filter((p) => !platforms[p]);
-  let blockedBy: string[] = [];
-  if (closedHere.length && blockedPlats.length) {
-    for (const f of closedHere) {
-      const c2 = new Set(closed);
-      c2.delete(f);
-      if (blockedPlats.some((p) => accessDetail(data, st, p, c2, 'both', false).ok)) blockedBy.push(f);
+  const partial = stepFree && blockedPlats.length > 0;
+  const blockedBy = new Set<string>();
+  const blockedPlatforms: BlockedPlatform[] = [];
+  for (const p of blockedPlats) {
+    // Facilities whose return alone restores this platform; else all closures here if only together they do.
+    let ids: string[] = [];
+    if (closedHere.length) {
+      for (const f of closedHere) {
+        const c2 = new Set(closed);
+        c2.delete(f);
+        if (accessDetail(data, st, p, c2, 'both', false).ok) ids.push(f);
+      }
+      if (!ids.length) {
+        const c3 = new Set(closed);
+        for (const f of closedHere) c3.delete(f);
+        if (accessDetail(data, st, p, c3, 'both', false).ok) ids = [...closedHere];
+      }
     }
-    if (!blockedBy.length) {
-      // Redundant facilities all closed together: none alone restores access, but together they do.
-      const c3 = new Set(closed);
-      for (const f of closedHere) c3.delete(f);
-      if (blockedPlats.some((p) => accessDetail(data, st, p, c3, 'both', false).ok)) blockedBy = [...closedHere];
+    for (const f of ids) blockedBy.add(f);
+    if (ids.length || partial) {
+      blockedPlatforms.push({ platformId: p, name: data.network.platforms[p]?.name ?? p, facilityIds: ids });
     }
   }
-  return { stepFree, approximate, platforms, blockedBy };
+  return { stepFree, partial, approximate, platforms, blockedBy: [...blockedBy].sort(), blockedPlatforms };
 }
 
 // ---------------------------------------------------------------- geography
@@ -416,6 +508,89 @@ export function nearestStepFree(
     }
   }
   return out;
+}
+
+// ---------------------------------------------------------------- towards (terminal of travel direction)
+
+/**
+ * Terminal station name(s) reached from `platformId` by following ride edges of the same route and
+ * direction. Branches are joined alphabetically ("Ashmont/Braintree"). At a terminal it is that station.
+ */
+export function towardsOf(data: StaticData, route: string, directionId: 0 | 1, platformId: string): string | undefined {
+  const terminals = terminalsOf(data, route, directionId, platformId);
+  return terminals.size ? [...terminals].sort().join('/') : undefined;
+}
+
+function terminalsOf(data: StaticData, route: string, directionId: 0 | 1, platformId: string): Set<string> {
+  const idx = index(data);
+  const terminals = new Set<string>();
+  const seen = new Set<string>([platformId]);
+  const stack = [platformId];
+  while (stack.length) {
+    const p = stack.pop()!;
+    const next = (idx.ridesFrom.get(p) ?? []).filter((e) => e.route === route && e.directionId === directionId);
+    if (!next.length) {
+      const sid = data.network.platforms[p]?.stationId;
+      const name = (sid && idx.stationById.get(sid)?.name) || data.network.platforms[p]?.name;
+      if (name) terminals.add(name);
+      continue;
+    }
+    for (const e of next) {
+      if (seen.has(e.to)) continue;
+      seen.add(e.to);
+      stack.push(e.to);
+    }
+  }
+  return terminals;
+}
+
+/**
+ * Every route that serves the leg's stations in order (the leg's own route from its boarding platform,
+ * other routes from any platform of the first station), and the merged terminals of all those trains.
+ * So a Red leg ending at JFK/UMass is towards "Ashmont/Braintree", and Park Street -> Kenmore on the
+ * Green trunk lists the other branches that run it.
+ */
+function legService(data: StaticData, leg: RideLeg, directionId: 0 | 1): { alsoRoutes: RouteId[]; towards?: string } {
+  const idx = index(data);
+  const sts = leg.stationIds;
+  const candidates = new Set<RouteId>([leg.route]);
+  for (const p of platformsOf(data, sts[0])) for (const e of idx.ridesFrom.get(p) ?? []) candidates.add(e.route);
+  const terminals = new Set<string>();
+  const alsoRoutes: RouteId[] = [];
+  for (const r of candidates) {
+    const own = r === leg.route;
+    let cur = new Map<string, 0 | 1 | null>(
+      own ? [[leg.fromPlatform, directionId]] : platformsOf(data, sts[0]).map((p) => [p, null] as const),
+    );
+    for (let i = 1; i < sts.length && cur.size; i++) {
+      const next = new Map<string, 0 | 1 | null>();
+      for (const [p, dir] of cur) {
+        for (const e of idx.ridesFrom.get(p) ?? []) {
+          if (e.route !== r || (dir !== null && e.directionId !== dir)) continue;
+          if (data.network.platforms[e.to]?.stationId === sts[i]) next.set(e.to, e.directionId);
+        }
+      }
+      cur = next;
+    }
+    if (!cur.size || (!own && sts.length < 2)) continue;
+    if (!own) alsoRoutes.push(r);
+    for (const [p, dir] of cur) for (const t of terminalsOf(data, r, dir ?? directionId, p)) terminals.add(t);
+  }
+  alsoRoutes.sort((a, b) => SUBWAY_ROUTES.indexOf(a) - SUBWAY_ROUTES.indexOf(b));
+  return { alsoRoutes, ...(terminals.size ? { towards: [...terminals].sort().join('/') } : {}) };
+}
+
+function nodeName(data: StaticData, stationId: string, nodeId: string | null): string | undefined {
+  if (!nodeId) return undefined;
+  const n = data.pathways[stationId]?.nodes?.[nodeId]?.name;
+  return n ? n : undefined;
+}
+
+function entrancePoint(data: StaticData, station: Station, nodeId: string | null): EntrancePoint | undefined {
+  if (!nodeId) return undefined;
+  const n = data.pathways[station.id]?.nodes?.[nodeId];
+  if (!n || typeof n.lat !== 'number' || typeof n.lon !== 'number') return undefined;
+  return { id: nodeId, name: n.name || station.name, lat: n.lat, lon: n.lon };
 }
 
 // ---------------------------------------------------------------- trip planner
@@ -477,10 +652,12 @@ export function planStepFree(
     let info: TransferInfo = null;
     const st = idx.stationById.get(stationId);
     const sp = usablePathways(data, stationId);
-    if (sp && hasOwn(sp.nodes, from) && hasOwn(sp.nodes, to)) {
+    if (boardingBlocked(idx, from, closed) || boardingBlocked(idx, to, closed)) {
+      // cannot alight or board step-free at a platform whose mini-high platform is closed
+    } else if (sp && hasOwn(sp.nodes, from) && hasOwn(sp.nodes, to)) {
       const path = stationPath(sp, [from], [to], closed);
       if (path) info = { minutes: Math.max(MIN_TRANSFER_MIN, path.seconds / 60), facilityIds: path.facilityIds, approximate: false };
-    } else if (st && fallbackOk(st, closed)) {
+    } else if (st && fallbackOk(st, closed, idx.boardingIds)) {
       info = { minutes: FALLBACK_TRANSFER_MIN, facilityIds: [], approximate: true };
     }
     transferCache.set(key, info);
@@ -553,6 +730,7 @@ export function planStepFree(
   const stationOf = (pid: string) => data.network.platforms[pid]?.stationId ?? pid;
 
   const legs: Leg[] = [];
+  const legDir = new Map<RideLeg, 0 | 1>();
   const used = new Set<string>();
   const oa = originAccess.get(startPlatform)!;
   const da = destAccess.get(endPlatform)!;
@@ -580,7 +758,7 @@ export function planStepFree(
       if (last.stationIds[last.stationIds.length - 1] !== toSt) last.stationIds.push(toSt);
     } else {
       const fromSt = stationOf(e.from);
-      legs.push({
+      const leg: RideLeg = {
         kind: 'ride',
         route: e.route,
         fromStation: fromSt,
@@ -589,20 +767,43 @@ export function planStepFree(
         minutes: Math.max(0, e.minutes),
         fromPlatform: e.from,
         toPlatform: e.to,
-      });
+      };
+      legDir.set(leg, e.directionId);
+      legs.push(leg);
     }
   }
-  for (const l of legs) l.minutes = round1(l.minutes);
+  for (const l of legs) {
+    l.minutes = round1(l.minutes);
+    if (l.kind !== 'ride') continue;
+    // Trains that run the whole leg: a leg onto one branch names only that branch's terminal, a leg
+    // that ends where the line splits (JFK/UMass) names both, and other Green branches are listed.
+    const dir = legDir.get(l) ?? 0;
+    const svc = legService(data, l, dir);
+    const towards = svc.towards ?? towardsOf(data, l.route, dir, l.toPlatform);
+    if (towards) l.towards = towards;
+    if (svc.alsoRoutes.length) l.alsoRoutes = svc.alsoRoutes;
+  }
   for (const f of da.outPath?.facilityIds ?? []) used.add(f);
 
-  return {
+  const originEntranceId = oa.inPath?.from ?? null;
+  const destinationExitId = da.outPath?.to ?? null;
+  const out: RouteOk = {
     ok: true,
     minutes: round1(dist.get(goal)!),
     legs,
     transfers: legs.filter((l) => l.kind === 'transfer').length,
     approximate,
     usedFacilityIds: [...used],
-    originEntranceId: oa.inPath?.from ?? null,
-    destinationExitId: da.outPath?.to ?? null,
+    originEntranceId,
+    destinationExitId,
   };
+  const oName = nodeName(data, o.id, originEntranceId);
+  const dName = nodeName(data, d.id, destinationExitId);
+  if (oName) out.originEntranceName = oName;
+  if (dName) out.destinationExitName = dName;
+  const oPoint = entrancePoint(data, o, originEntranceId);
+  const dPoint = entrancePoint(data, d, destinationExitId);
+  if (oPoint) out.originEntrance = oPoint;
+  if (dPoint) out.destinationExit = dPoint;
+  return out;
 }

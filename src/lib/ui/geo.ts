@@ -41,3 +41,13 @@ export function routeGeojson(
   }
   return { type: 'FeatureCollection', features };
 }
+
+/** Walking line(s) for the map, drawn dashed. Each entry is a list of [lon, lat]. */
+export function walkGeojson(lines: [number, number][][] | null | undefined): GeoJSON.FeatureCollection<GeoJSON.LineString> {
+  return {
+    type: 'FeatureCollection',
+    features: (lines ?? [])
+      .filter((c) => c.length >= 2)
+      .map((coordinates) => ({ type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates } })),
+  };
+}

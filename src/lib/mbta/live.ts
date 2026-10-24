@@ -7,8 +7,12 @@ export const STOP_ID_RE = /^place-[a-z0-9-]+$/;
 export const MAX_PREDICTION_STOPS = 5;
 export const PREDICTIONS_PER_GROUP = 3;
 
+/** A vehicle whose position is older than this is flagged stale. */
+export const VEHICLE_STALE_MS = 5 * 60_000;
+
+/** Subway only (route_type 0,1): filter[stop]=place-sstat would otherwise pull in Silver Line and Commuter Rail. */
 export function predictionsPath(stopIds: string[]): string {
-  return `/predictions?filter[stop]=${stopIds.join(',')}&include=trip,stop&fields[trip]=headsign&sort=departure_time`;
+  return `/predictions?filter[stop]=${stopIds.join(',')}&filter[route_type]=0,1&include=trip,stop&fields[trip]=headsign&sort=departure_time`;
 }
 
 export const VEHICLES_PATH = `/vehicles?filter[route]=${SUBWAY_ROUTES.join(',')}&include=trip&fields[trip]=headsign`;
@@ -49,13 +53,15 @@ export function normalizePredictions(json: any, now: Date = new Date(), parentOf
   for (const row of Array.isArray(json?.data) ? json.data : []) {
     const a = row?.attributes ?? {};
     if (a.schedule_relationship === 'CANCELLED' || a.schedule_relationship === 'SKIPPED') continue;
-    const time: string | null = a.departure_time ?? a.arrival_time ?? null;
+    // Departures board: a row with no departure_time is a train ending here (cannot board). Terminal
+    // departures have departure_time and a null arrival_time, so they stay.
+    const time: string | null = a.departure_time ?? null;
     if (!time) continue;
     const t = Date.parse(time);
     if (Number.isNaN(t) || t < nowMs) continue;
     const routeId = relId(row, 'route');
     const platformId = relId(row, 'stop');
-    if (!routeId || !platformId) continue;
+    if (!routeId || !platformId || !SUBWAY.has(routeId)) continue;
     const tripId = relId(row, 'trip');
     const uncertainty = a.arrival_uncertainty ?? a.departure_uncertainty;
     rows.push({
@@ -79,8 +85,20 @@ export function normalizePredictions(json: any, now: Date = new Date(), parentOf
   });
 }
 
-export function normalizeVehicles(json: any, parentOf: ParentOf = identityParent): Vehicle[] {
+/** Latest updated_at in a raw vehicles body (a demo snapshot's capture time), or null. */
+export function latestVehicleUpdate(json: any): Date | null {
+  let max = NaN;
+  for (const row of Array.isArray(json?.data) ? json.data : []) {
+    const t = Date.parse(row?.attributes?.updated_at ?? '');
+    if (!Number.isNaN(t) && !(t <= max)) max = t;
+  }
+  return Number.isNaN(max) ? null : new Date(max);
+}
+
+/** `now` is the reference for `stale` (updated_at older than VEHICLE_STALE_MS). */
+export function normalizeVehicles(json: any, parentOf: ParentOf = identityParent, now: Date = new Date()): Vehicle[] {
   const { headsign, stopParent } = indexIncluded(json);
+  const nowMs = now.getTime();
   const out: Vehicle[] = [];
   for (const row of Array.isArray(json?.data) ? json.data : []) {
     const a = row?.attributes ?? {};
@@ -91,6 +109,7 @@ export function normalizeVehicles(json: any, parentOf: ParentOf = identityParent
     if (typeof a.latitude !== 'number' || typeof a.longitude !== 'number') continue;
     const stopId = relId(row, 'stop');
     const tripId = relId(row, 'trip');
+    const updatedMs = Date.parse(a.updated_at ?? '');
     out.push({
       id: String(row.id),
       routeId,
@@ -102,6 +121,7 @@ export function normalizeVehicles(json: any, parentOf: ParentOf = identityParent
       stationId: stopId ? resolveStation(stopId, parentOf, stopParent) : null,
       headsign: (tripId && headsign.get(tripId)) || null,
       updatedAt: a.updated_at ?? '',
+      stale: !Number.isNaN(updatedMs) && nowMs - updatedMs > VEHICLE_STALE_MS,
     });
   }
   return out;

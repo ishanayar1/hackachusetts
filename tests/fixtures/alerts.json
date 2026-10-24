@@ -1,5 +1,5 @@
 {
- "capturedAt": "2026-10-24T16:16:36.622Z",
+ "capturedAt": "2026-10-24T17:12:24.428Z",
  "data": [
   {
    "attributes": {
@@ -5284,6 +5284,61 @@
    "id": "1037698",
    "links": {
     "self": "/alerts/1037698"
+   },
+   "type": "alert"
+  },
+  {
+   "attributes": {
+    "active_period": [
+     {
+      "end": "1969-12-31T19:00:00-05:00",
+      "start": "1969-12-31T19:00:00-05:00"
+     }
+    ],
+    "banner": null,
+    "cause": "MAINTENANCE",
+    "closed_timestamp": null,
+    "created_at": "2026-10-24T10:32:01-04:00",
+    "description": "Synthetic test alert shaped like live alert 1040949 (MBTA placeholder epoch active_period).",
+    "duration_certainty": "UNKNOWN",
+    "effect": "ELEVATOR_CLOSURE",
+    "header": "Haymarket Elevator 907 (Oak Grove platform to lobby) is unavailable due to maintenance.",
+    "image": null,
+    "image_alternative_text": null,
+    "informed_entity": [
+     {
+      "stop": "place-haecl",
+      "route_type": 1,
+      "route": "Orange",
+      "activities": [
+       "USING_WHEELCHAIR"
+      ],
+      "facility": "907"
+     }
+    ],
+    "last_push_notification_timestamp": "2026-10-24T10:32:01-04:00",
+    "lifecycle": "NEW",
+    "reminder_times": null,
+    "service_effect": "Haymarket elevator unavailable",
+    "severity": 3,
+    "short_header": "",
+    "timeframe": null,
+    "updated_at": "2026-10-24T10:32:01-04:00",
+    "url": null
+   },
+   "id": "synthetic-epoch-907",
+   "links": {
+    "self": "/alerts/synthetic-epoch-907"
+   },
+   "relationships": {
+    "facilities": {
+     "data": [
+      {
+       "id": "967",
+       "type": "facility"
+      }
+     ]
+    }
    },
    "type": "alert"
   }

@@ -1,5 +1,5 @@
 {
- "capturedAt": "2026-10-24T16:16:36.622Z",
+ "capturedAt": "2026-10-24T17:12:24.428Z",
  "data": [
   {
    "attributes": {
@@ -7,45 +7,45 @@
     "carriages": [
      {
       "label": "1752",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
       "label": "1753",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
       "label": "1723",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
       "label": "1722",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
       "label": "1705",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
       "label": "1704",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      }
     ],
-    "current_status": "IN_TRANSIT_TO",
-    "current_stop_sequence": 190,
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 50,
     "direction_id": 1,
     "label": "1752",
-    "latitude": 42.37246,
-    "longitude": -71.11586,
+    "latitude": 42.28458,
+    "longitude": -71.06377,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:21-04:00"
+    "updated_at": "2026-10-24T13:09:46-04:00"
    },
    "id": "R-548C620B",
    "links": {
@@ -60,13 +60,13 @@
     },
     "stop": {
      "data": {
-      "id": "70068",
+      "id": "70094",
       "type": "stop"
      }
     },
     "trip": {
      "data": {
-      "id": "77909754",
+      "id": "77909756",
       "type": "trip"
      }
     }
@@ -75,49 +75,49 @@
   },
   {
    "attributes": {
-    "bearing": 260,
+    "bearing": 85,
     "carriages": [
      {
-      "label": "1743",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1742",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1736",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1737",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1756",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
       "label": "1757",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1756",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1737",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1736",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1742",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1743",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      }
     ],
-    "current_status": "INCOMING_AT",
-    "current_stop_sequence": 160,
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 1,
     "direction_id": 0,
-    "label": "1743",
-    "latitude": 42.29938,
-    "longitude": -71.06397,
+    "label": "1756",
+    "latitude": 42.39621,
+    "longitude": -71.14054,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:22-04:00"
+    "updated_at": "2026-10-24T13:07:48-04:00"
    },
    "id": "R-548C6149",
    "links": {
@@ -132,13 +132,13 @@
     },
     "stop": {
      "data": {
-      "id": "70091",
+      "id": "Alewife-01",
       "type": "stop"
      }
     },
     "trip": {
      "data": {
-      "id": "77909643",
+      "id": "77909645",
       "type": "trip"
      }
     }
@@ -147,619 +147,53 @@
   },
   {
    "attributes": {
-    "bearing": 15,
+    "bearing": 130,
     "carriages": [
      {
-      "label": "1944",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
-     },
-     {
-      "label": "1945",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 9
-     },
-     {
-      "label": "1903",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
-     },
-     {
-      "label": "1902",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 5
+      "label": "1922",
+      "occupancy_percentage": 16,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
       "label": "1923",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 5
+      "occupancy_percentage": 20,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
-      "label": "1922",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     }
-    ],
-    "current_status": "INCOMING_AT",
-    "current_stop_sequence": 90,
-    "direction_id": 1,
-    "label": "1944",
-    "latitude": 42.31252,
-    "longitude": -71.05277,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:16:17-04:00"
-   },
-   "id": "R-548C613C",
-   "links": {
-    "self": "/vehicles/R-548C613C"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "70086",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "77909806",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 310,
-    "carriages": [
-     {
-      "label": "1920",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1902",
+      "occupancy_percentage": 15,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
-      "label": "1921",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1903",
+      "occupancy_percentage": 15,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
-      "label": "1954",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1945",
+      "occupancy_percentage": 20,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
-      "label": "1955",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1925",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1924",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     }
-    ],
-    "current_status": "STOPPED_AT",
-    "current_stop_sequence": 150,
-    "direction_id": 1,
-    "label": "1924",
-    "latitude": 42.3565,
-    "longitude": -71.06263,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:15:59-04:00"
-   },
-   "id": "R-548C6137",
-   "links": {
-    "self": "/vehicles/R-548C6137"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "70076",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "77909780",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 85,
-    "carriages": [
-     {
-      "label": "1900",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 4
-     },
-     {
-      "label": "1901",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 10
-     },
-     {
-      "label": "1934",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1935",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 4
-     },
-     {
-      "label": "1917",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 4
-     },
-     {
-      "label": "1916",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 5
-     }
-    ],
-    "current_status": "STOPPED_AT",
-    "current_stop_sequence": 1,
-    "direction_id": 0,
-    "label": "1900",
-    "latitude": 42.39618,
-    "longitude": -71.14054,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:12:09-04:00"
-   },
-   "id": "R-548C6135",
-   "links": {
-    "self": "/vehicles/R-548C6135"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "Alewife-02",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "77909727",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 135,
-    "carriages": [
-     {
-      "label": "1719",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1718",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1700",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1701",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1741",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1740",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     }
-    ],
-    "current_status": "STOPPED_AT",
-    "current_stop_sequence": 190,
-    "direction_id": 0,
-    "label": "1719",
-    "latitude": 42.2668,
-    "longitude": -71.02063,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:15:55-04:00"
-   },
-   "id": "R-548C5FE1",
-   "links": {
-    "self": "/vehicles/R-548C5FE1"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "70099",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "77909940",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 95,
-    "carriages": [
-     {
-      "label": "1906",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 2
-     },
-     {
-      "label": "1907",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 10
-     },
-     {
-      "label": "1929",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 10
-     },
-     {
-      "label": "1928",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
-     }
-    ],
-    "current_status": "INCOMING_AT",
-    "current_stop_sequence": 10,
-    "direction_id": 0,
-    "label": "1906",
-    "latitude": 42.39774,
-    "longitude": -71.13272,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:16:17-04:00"
-   },
-   "id": "R-548C5E20",
-   "links": {
-    "self": "/vehicles/R-548C5E20"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "70063",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "77909943",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 130,
-    "carriages": [
-     {
-      "label": "1857",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1856",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1859",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1858",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1873",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1872",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     }
-    ],
-    "current_status": "INCOMING_AT",
-    "current_stop_sequence": 100,
-    "direction_id": 0,
-    "label": "1857",
-    "latitude": 42.34895,
-    "longitude": -71.05328,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:16:27-04:00"
-   },
-   "id": "R-548C5C32",
-   "links": {
-    "self": "/vehicles/R-548C5C32"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "70081",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "77909671",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 10,
-    "carriages": [
-     {
-      "label": "1734",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1735",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1710",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1711",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1716",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1717",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     }
-    ],
-    "current_status": "STOPPED_AT",
-    "current_stop_sequence": 1,
-    "direction_id": 1,
-    "label": "1717",
-    "latitude": 42.20749,
-    "longitude": -71.00173,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:14:16-04:00"
-   },
-   "id": "R-548C58CF",
-   "links": {
-    "self": "/vehicles/R-548C58CF"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "Braintree-02",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "ADDED-1585019753",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 95,
-    "carriages": [
-     {
-      "label": "1827",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1826",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1808",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1809",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1830",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1831",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     }
-    ],
-    "current_status": "STOPPED_AT",
-    "current_stop_sequence": 50,
-    "direction_id": 0,
-    "label": "1827",
-    "latitude": 42.36243,
-    "longitude": -71.08581,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:15:27-04:00"
-   },
-   "id": "R-548C574E",
-   "links": {
-    "self": "/vehicles/R-548C574E"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "70071",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "77909942",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 130,
-    "carriages": [
-     {
-      "label": "1823",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1822",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1804",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1805",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1829",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1828",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1944",
+      "occupancy_percentage": 9,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      }
     ],
     "current_status": "STOPPED_AT",
     "current_stop_sequence": 40,
     "direction_id": 0,
-    "label": "1823",
+    "label": "1922",
     "latitude": 42.36553,
     "longitude": -71.10403,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:05-04:00"
+    "updated_at": "2026-10-24T13:10:05-04:00"
    },
-   "id": "R-548C574A",
+   "id": "R-548C613C",
    "links": {
-    "self": "/vehicles/R-548C574A"
+    "self": "/vehicles/R-548C613C"
    },
    "relationships": {
     "route": {
@@ -776,7 +210,223 @@
     },
     "trip": {
      "data": {
-      "id": "77909699",
+      "id": "77909807",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 195,
+    "carriages": [
+     {
+      "label": "1920",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1921",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1954",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1955",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1925",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1924",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     }
+    ],
+    "current_status": "IN_TRANSIT_TO",
+    "current_stop_sequence": 150,
+    "direction_id": 0,
+    "label": "1920",
+    "latitude": 42.30878,
+    "longitude": -71.05441,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:12:05-04:00"
+   },
+   "id": "R-548C6137",
+   "links": {
+    "self": "/vehicles/R-548C6137"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "70089",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "77909781",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 350,
+    "carriages": [
+     {
+      "label": "1900",
+      "occupancy_percentage": 12,
+      "occupancy_status": "STANDING_ROOM_ONLY"
+     },
+     {
+      "label": "1901",
+      "occupancy_percentage": 13,
+      "occupancy_status": "STANDING_ROOM_ONLY"
+     },
+     {
+      "label": "1934",
+      "occupancy_percentage": 8,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1935",
+      "occupancy_percentage": 6,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1917",
+      "occupancy_percentage": 11,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1916",
+      "occupancy_percentage": 5,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     }
+    ],
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 90,
+    "direction_id": 1,
+    "label": "1900",
+    "latitude": 42.32057,
+    "longitude": -71.05256,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:11:27-04:00"
+   },
+   "id": "R-548C6135",
+   "links": {
+    "self": "/vehicles/R-548C6135"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "70086",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "77909728",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 315,
+    "carriages": [
+     {
+      "label": "1740",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1741",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1701",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1700",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1718",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1719",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     }
+    ],
+    "current_status": "INCOMING_AT",
+    "current_stop_sequence": 30,
+    "direction_id": 1,
+    "label": "1740",
+    "latitude": 42.2583,
+    "longitude": -71.01168,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:11:54-04:00"
+   },
+   "id": "R-548C5FE1",
+   "links": {
+    "self": "/vehicles/R-548C5FE1"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "70100",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "ADDED-1585019786",
       "type": "trip"
      }
     }
@@ -788,50 +438,40 @@
     "bearing": 150,
     "carriages": [
      {
-      "label": "1703",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1906",
+      "occupancy_percentage": 2,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
      },
      {
-      "label": "1702",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1907",
+      "occupancy_percentage": 5,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
      },
      {
-      "label": "1514",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1929",
+      "occupancy_percentage": 11,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
-      "label": "1515",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1720",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     },
-     {
-      "label": "1721",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1928",
+      "occupancy_percentage": 9,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      }
     ],
     "current_status": "STOPPED_AT",
     "current_stop_sequence": 200,
     "direction_id": 0,
-    "label": "1703",
+    "label": "1906",
     "latitude": 42.25203,
     "longitude": -71.00551,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:07:38-04:00"
+    "updated_at": "2026-10-24T13:04:13-04:00"
    },
-   "id": "R-548C5214",
+   "id": "R-548C5E20",
    "links": {
-    "self": "/vehicles/R-548C5214"
+    "self": "/vehicles/R-548C5E20"
    },
    "relationships": {
     "route": {
@@ -848,7 +488,7 @@
     },
     "trip": {
      "data": {
-      "id": "77909939",
+      "id": "77909943",
       "type": "trip"
      }
     }
@@ -857,53 +497,269 @@
   },
   {
    "attributes": {
-    "bearing": 275,
+    "bearing": 80,
     "carriages": [
      {
-      "label": "1630",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1872",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1631",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1873",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1732",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1858",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1733",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1859",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1751",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1856",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1750",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1857",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      }
     ],
-    "current_status": "STOPPED_AT",
-    "current_stop_sequence": 160,
+    "current_status": "INCOMING_AT",
+    "current_stop_sequence": 220,
     "direction_id": 1,
-    "label": "1630",
-    "latitude": 42.36126,
-    "longitude": -71.07162,
+    "label": "1872",
+    "latitude": 42.39642,
+    "longitude": -71.13898,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:15:26-04:00"
+    "updated_at": "2026-10-24T13:12:20-04:00"
    },
-   "id": "R-548C50C3",
+   "id": "R-548C5C32",
    "links": {
-    "self": "/vehicles/R-548C50C3"
+    "self": "/vehicles/R-548C5C32"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "70061",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "77909672",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 310,
+    "carriages": [
+     {
+      "label": "1734",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1735",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1710",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1711",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1716",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1717",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     }
+    ],
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 180,
+    "direction_id": 1,
+    "label": "1734",
+    "latitude": 42.36554,
+    "longitude": -71.10401,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:11:37-04:00"
+   },
+   "id": "R-548C58CF",
+   "links": {
+    "self": "/vehicles/R-548C58CF"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "70070",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "ADDED-1585019753",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 190,
+    "carriages": [
+     {
+      "label": "1827",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1826",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1808",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1809",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1830",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1831",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     }
+    ],
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 220,
+    "direction_id": 0,
+    "label": "1827",
+    "latitude": 42.20749,
+    "longitude": -71.00173,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:10:54-04:00"
+   },
+   "id": "R-548C574E",
+   "links": {
+    "self": "/vehicles/R-548C574E"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "Braintree-02",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "77909942",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 310,
+    "carriages": [
+     {
+      "label": "1828",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1829",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1805",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1804",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1822",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1823",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     }
+    ],
+    "current_status": "INCOMING_AT",
+    "current_stop_sequence": 160,
+    "direction_id": 1,
+    "label": "1828",
+    "latitude": 42.35792,
+    "longitude": -71.06548,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:11:53-04:00"
+   },
+   "id": "R-548C574A",
+   "links": {
+    "self": "/vehicles/R-548C574A"
    },
    "relationships": {
     "route": {
@@ -920,7 +776,7 @@
     },
     "trip": {
      "data": {
-      "id": "77909851",
+      "id": "77909700",
       "type": "trip"
      }
     }
@@ -929,53 +785,53 @@
   },
   {
    "attributes": {
-    "bearing": 30,
+    "bearing": 0,
     "carriages": [
      {
-      "label": "1950",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
+      "label": "1721",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1951",
-      "occupancy_status": "STANDING_ROOM_ONLY",
-      "occupancy_percentage": 15
+      "label": "1720",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1912",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 11
+      "label": "1515",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1913",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 12
+      "label": "1514",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1933",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 9
+      "label": "1702",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1932",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 2
+      "label": "1703",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      }
     ],
-    "current_status": "IN_TRANSIT_TO",
-    "current_stop_sequence": 130,
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 110,
     "direction_id": 1,
-    "label": "1950",
-    "latitude": 42.34511,
-    "longitude": -71.05582,
+    "label": "1721",
+    "latitude": 42.33022,
+    "longitude": -71.05697,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:25-04:00"
+    "updated_at": "2026-10-24T13:12:11-04:00"
    },
-   "id": "R-548C5049",
+   "id": "R-548C5214",
    "links": {
-    "self": "/vehicles/R-548C5049"
+    "self": "/vehicles/R-548C5214"
    },
    "relationships": {
     "route": {
@@ -986,13 +842,13 @@
     },
     "stop": {
      "data": {
-      "id": "70080",
+      "id": "70084",
       "type": "stop"
      }
     },
     "trip": {
      "data": {
-      "id": "77909852",
+      "id": "ADDED-1585019767",
       "type": "trip"
      }
     }
@@ -1001,125 +857,53 @@
   },
   {
    "attributes": {
-    "bearing": 330,
+    "bearing": 135,
     "carriages": [
      {
-      "label": "1882",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1750",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1883",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1751",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1850",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1733",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1851",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1732",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1824",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "label": "1631",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      },
      {
-      "label": "1825",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
-     }
-    ],
-    "current_status": "IN_TRANSIT_TO",
-    "current_stop_sequence": 10,
-    "direction_id": 1,
-    "label": "1882",
-    "latitude": 42.22099,
-    "longitude": -71.00101,
-    "occupancy_status": null,
-    "revenue": "REVENUE",
-    "speed": null,
-    "updated_at": "2026-10-24T12:13:36-04:00"
-   },
-   "id": "R-548C4798",
-   "links": {
-    "self": "/vehicles/R-548C4798"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "stop": {
-     "data": {
-      "id": "70104",
-      "type": "stop"
-     }
-    },
-    "trip": {
-     "data": {
-      "id": "ADDED-1585019752",
-      "type": "trip"
-     }
-    }
-   },
-   "type": "vehicle"
-  },
-  {
-   "attributes": {
-    "bearing": 170,
-    "carriages": [
-     {
-      "label": "1940",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 7
-     },
-     {
-      "label": "1941",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 10
-     },
-     {
-      "label": "1966",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
-     },
-     {
-      "label": "1967",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
-     },
-     {
-      "label": "1959",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 5
-     },
-     {
-      "label": "1958",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 3
+      "label": "1630",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
      }
     ],
     "current_status": "IN_TRANSIT_TO",
     "current_stop_sequence": 180,
     "direction_id": 0,
-    "label": "1940",
-    "latitude": 42.31602,
-    "longitude": -71.05206,
+    "label": "1750",
+    "latitude": 42.29668,
+    "longitude": -71.05126,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:15:28-04:00"
+    "updated_at": "2026-10-24T13:12:11-04:00"
    },
-   "id": "R-548C223D",
+   "id": "R-548C50C3",
    "links": {
-    "self": "/vehicles/R-548C223D"
+    "self": "/vehicles/R-548C50C3"
    },
    "relationships": {
     "route": {
@@ -1136,7 +920,7 @@
     },
     "trip": {
      "data": {
-      "id": "77909941",
+      "id": "77909944",
       "type": "trip"
      }
     }
@@ -1145,49 +929,265 @@
   },
   {
    "attributes": {
-    "bearing": 357,
+    "bearing": 130,
     "carriages": [
      {
-      "label": "1476",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
+      "label": "1932",
+      "occupancy_percentage": 4,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
      },
      {
-      "label": "1477",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 7
+      "label": "1933",
+      "occupancy_percentage": 10,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
-      "label": "1468",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 3
+      "label": "1913",
+      "occupancy_percentage": 10,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
-      "label": "1469",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 8
+      "label": "1912",
+      "occupancy_percentage": 11,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
-      "label": "1489",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 2
+      "label": "1951",
+      "occupancy_percentage": 12,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
-      "label": "1488",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 14
+      "label": "1950",
+      "occupancy_percentage": 14,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      }
     ],
     "current_status": "INCOMING_AT",
-    "current_stop_sequence": 180,
-    "direction_id": 1,
-    "label": "1476",
-    "latitude": 42.41459,
-    "longitude": -71.07663,
+    "current_stop_sequence": 100,
+    "direction_id": 0,
+    "label": "1932",
+    "latitude": 42.3506,
+    "longitude": -71.05569,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:26-04:00"
+    "updated_at": "2026-10-24T13:12:12-04:00"
+   },
+   "id": "R-548C5049",
+   "links": {
+    "self": "/vehicles/R-548C5049"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "70081",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "77909945",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 175,
+    "carriages": [
+     {
+      "label": "1825",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1824",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1851",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1850",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1883",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     },
+     {
+      "label": "1882",
+      "occupancy_percentage": null,
+      "occupancy_status": "NO_DATA_AVAILABLE"
+     }
+    ],
+    "current_status": "INCOMING_AT",
+    "current_stop_sequence": 20,
+    "direction_id": 0,
+    "label": "1825",
+    "latitude": 42.39202,
+    "longitude": -71.11925,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:11:59-04:00"
+   },
+   "id": "R-548C4798",
+   "links": {
+    "self": "/vehicles/R-548C4798"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "70065",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "77909948",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 10,
+    "carriages": [
+     {
+      "label": "1940",
+      "occupancy_percentage": 4,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1941",
+      "occupancy_percentage": 5,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1966",
+      "occupancy_percentage": 4,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1967",
+      "occupancy_percentage": 5,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1959",
+      "occupancy_percentage": 6,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1958",
+      "occupancy_percentage": 0,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
+     }
+    ],
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 1,
+    "direction_id": 1,
+    "label": "1940",
+    "latitude": 42.20749,
+    "longitude": -71.00156,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T12:58:31-04:00"
+   },
+   "id": "R-548C223D",
+   "links": {
+    "self": "/vehicles/R-548C223D"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "stop": {
+     "data": {
+      "id": "Braintree-01",
+      "type": "stop"
+     }
+    },
+    "trip": {
+     "data": {
+      "id": "ADDED-1585019791",
+      "type": "trip"
+     }
+    }
+   },
+   "type": "vehicle"
+  },
+  {
+   "attributes": {
+    "bearing": 40,
+    "carriages": [
+     {
+      "label": "1476",
+      "occupancy_percentage": 12,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1477",
+      "occupancy_percentage": 9,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1468",
+      "occupancy_percentage": 5,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1469",
+      "occupancy_percentage": 10,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1489",
+      "occupancy_percentage": 3,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1488",
+      "occupancy_percentage": 13,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     }
+    ],
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 50,
+    "direction_id": 1,
+    "label": "1476",
+    "latitude": 42.33643,
+    "longitude": -71.08957,
+    "occupancy_status": null,
+    "revenue": "REVENUE",
+    "speed": null,
+    "updated_at": "2026-10-24T13:12:09-04:00"
    },
    "id": "O-548C6147",
    "links": {
@@ -1202,13 +1202,13 @@
     },
     "stop": {
      "data": {
-      "id": "70035",
+      "id": "70011",
       "type": "stop"
      }
     },
     "trip": {
      "data": {
-      "id": "77792284",
+      "id": "77792282",
       "type": "trip"
      }
     }
@@ -1217,49 +1217,49 @@
   },
   {
    "attributes": {
-    "bearing": 185,
+    "bearing": 50,
     "carriages": [
      {
       "label": "1492",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": 20,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
       "label": "1493",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 2
+      "occupancy_percentage": 32,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
       "label": "1442",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 5
+      "occupancy_percentage": 31,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
       "label": "1443",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 9
+      "occupancy_percentage": 20,
+      "occupancy_status": "STANDING_ROOM_ONLY"
      },
      {
       "label": "1487",
-      "occupancy_status": "NO_DATA_AVAILABLE",
-      "occupancy_percentage": null
+      "occupancy_percentage": 19,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
       "label": "1486",
-      "occupancy_status": "MANY_SEATS_AVAILABLE",
-      "occupancy_percentage": 6
+      "occupancy_percentage": 12,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      }
     ],
     "current_status": "STOPPED_AT",
-    "current_stop_sequence": 1,
-    "direction_id": 0,
+    "current_stop_sequence": 80,
+    "direction_id": 1,
     "label": "1492",
-    "latitude": 42.43773,
-    "longitude": -71.07093,
+    "latitude": 42.34878,
+    "longitude": -71.06468,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:22-04:00"
+    "updated_at": "2026-10-24T13:12:03-04:00"
    },
    "id": "O-548C613F",
    "links": {
@@ -1274,13 +1274,13 @@
     },
     "stop": {
      "data": {
-      "id": "Oak Grove-02",
+      "id": "70017",
       "type": "stop"
      }
     },
     "trip": {
      "data": {
-      "id": "77792194",
+      "id": "77792193",
       "type": "trip"
      }
     }
@@ -1289,49 +1289,49 @@
   },
   {
    "attributes": {
-    "bearing": 177,
+    "bearing": 340,
     "carriages": [
      {
-      "label": "1500",
-      "occupancy_status": "STANDING_ROOM_ONLY",
-      "occupancy_percentage": 19
-     },
-     {
-      "label": "1501",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 15
-     },
-     {
-      "label": "1509",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 9
-     },
-     {
-      "label": "1508",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 10
+      "label": "1454",
+      "occupancy_percentage": 10,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
       "label": "1455",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 10
+      "occupancy_percentage": 9,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
-      "label": "1454",
-      "occupancy_status": "STANDING_ROOM_ONLY",
-      "occupancy_percentage": 21
+      "label": "1508",
+      "occupancy_percentage": 13,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1509",
+      "occupancy_percentage": 10,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1501",
+      "occupancy_percentage": 14,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1500",
+      "occupancy_percentage": 14,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      }
     ],
     "current_status": "INCOMING_AT",
-    "current_stop_sequence": 30,
-    "direction_id": 0,
-    "label": "1500",
-    "latitude": 42.39951,
-    "longitude": -71.07731,
+    "current_stop_sequence": 150,
+    "direction_id": 1,
+    "label": "1454",
+    "latitude": 42.37898,
+    "longitude": -71.07633,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:31-04:00"
+    "updated_at": "2026-10-24T13:12:03-04:00"
    },
    "id": "O-548C613D",
    "links": {
@@ -1346,13 +1346,13 @@
     },
     "stop": {
      "data": {
-      "id": "70278",
+      "id": "70031",
       "type": "stop"
      }
     },
     "trip": {
      "data": {
-      "id": "77792163",
+      "id": "77792162",
       "type": "trip"
      }
     }
@@ -1361,49 +1361,49 @@
   },
   {
    "attributes": {
-    "bearing": 150,
+    "bearing": 357,
     "carriages": [
      {
-      "label": "1530",
-      "occupancy_status": "STANDING_ROOM_ONLY",
-      "occupancy_percentage": 18
-     },
-     {
-      "label": "1531",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 17
-     },
-     {
-      "label": "1528",
-      "occupancy_status": "STANDING_ROOM_ONLY",
-      "occupancy_percentage": 20
-     },
-     {
-      "label": "1529",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 15
+      "label": "1462",
+      "occupancy_percentage": 5,
+      "occupancy_status": "MANY_SEATS_AVAILABLE"
      },
      {
       "label": "1463",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 20
+      "occupancy_percentage": 15,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      },
      {
-      "label": "1462",
-      "occupancy_status": "FEW_SEATS_AVAILABLE",
-      "occupancy_percentage": 13
+      "label": "1529",
+      "occupancy_percentage": 14,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1528",
+      "occupancy_percentage": 10,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1531",
+      "occupancy_percentage": 14,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
+     },
+     {
+      "label": "1530",
+      "occupancy_percentage": 16,
+      "occupancy_status": "FEW_SEATS_AVAILABLE"
      }
     ],
-    "current_status": "INCOMING_AT",
-    "current_stop_sequence": 70,
-    "direction_id": 0,
-    "label": "1530",
-    "latitude": 42.36395,
-    "longitude": -71.05888,
+    "current_status": "STOPPED_AT",
+    "current_stop_sequence": 170,
+    "direction_id": 1,
+    "label": "1462",
+    "latitude": 42.40161,
+    "longitude": -71.07713,
     "occupancy_status": null,
     "revenue": "REVENUE",
     "speed": null,
-    "updated_at": "2026-10-24T12:16:28-04:00"
+    "updated_at": "2026-10-24T13:11:53-04:00"
    },
    "id": "O-548C613A",
    "links": {
@@ -1418,13 +1418,13 @@
     },
     "stop": {
      "data": {
-      "id": "70024",
+      "id": "70033",
       "type": "stop"
      }
     },
     "trip": {
      "data": {
-      "id": "77792254",
+      "id": "77792253",
       "type": "trip"
      }
     }
@@ -1435,119 +1435,11 @@
  "included": [
   {
    "attributes": {
-    "headsign": "Alewife"
-   },
-   "id": "77909780",
-   "links": {
-    "self": "/trips/77909780"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "route_pattern": {
-     "data": {
-      "id": "Red-1-1",
-      "type": "route_pattern"
-     }
-    },
-    "service": {
-     "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
-      "type": "service"
-     }
-    },
-    "shape": {
-     "data": {
-      "id": "931_0010",
-      "type": "shape"
-     }
-    }
-   },
-   "type": "trip"
-  },
-  {
-   "attributes": {
-    "headsign": "Braintree"
-   },
-   "id": "77909940",
-   "links": {
-    "self": "/trips/77909940"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "route_pattern": {
-     "data": {
-      "id": "Red-3-0",
-      "type": "route_pattern"
-     }
-    },
-    "service": {
-     "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
-      "type": "service"
-     }
-    },
-    "shape": {
-     "data": {
-      "id": "933_0020",
-      "type": "shape"
-     }
-    }
-   },
-   "type": "trip"
-  },
-  {
-   "attributes": {
-    "headsign": "Braintree"
-   },
-   "id": "77909939",
-   "links": {
-    "self": "/trips/77909939"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "route_pattern": {
-     "data": {
-      "id": "Red-3-0",
-      "type": "route_pattern"
-     }
-    },
-    "service": {
-     "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
-      "type": "service"
-     }
-    },
-    "shape": {
-     "data": {
-      "id": "933_0020",
-      "type": "shape"
-     }
-    }
-   },
-   "type": "trip"
-  },
-  {
-   "attributes": {
     "headsign": "Oak Grove"
    },
-   "id": "77792284",
+   "id": "77792253",
    "links": {
-    "self": "/trips/77792284"
+    "self": "/trips/77792253"
    },
    "relationships": {
     "route": {
@@ -1581,9 +1473,9 @@
    "attributes": {
     "headsign": "Braintree"
    },
-   "id": "77909941",
+   "id": "77909945",
    "links": {
-    "self": "/trips/77909941"
+    "self": "/trips/77909945"
    },
    "relationships": {
     "route": {
@@ -1615,11 +1507,119 @@
   },
   {
    "attributes": {
-    "headsign": "Forest Hills"
+    "headsign": "Braintree"
    },
-   "id": "77792254",
+   "id": "77909948",
    "links": {
-    "self": "/trips/77792254"
+    "self": "/trips/77909948"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "route_pattern": {
+     "data": {
+      "id": "Red-3-0",
+      "type": "route_pattern"
+     }
+    },
+    "service": {
+     "data": {
+      "id": "RTL20264-hms46016-Saturday-01",
+      "type": "service"
+     }
+    },
+    "shape": {
+     "data": {
+      "id": "933_0020",
+      "type": "shape"
+     }
+    }
+   },
+   "type": "trip"
+  },
+  {
+   "attributes": {
+    "headsign": "Alewife"
+   },
+   "id": "77909756",
+   "links": {
+    "self": "/trips/77909756"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "route_pattern": {
+     "data": {
+      "id": "Red-1-1",
+      "type": "route_pattern"
+     }
+    },
+    "service": {
+     "data": {
+      "id": "RTL20264-hms46016-Saturday-01",
+      "type": "service"
+     }
+    },
+    "shape": {
+     "data": {
+      "id": "931_0010",
+      "type": "shape"
+     }
+    }
+   },
+   "type": "trip"
+  },
+  {
+   "attributes": {
+    "headsign": "Ashmont"
+   },
+   "id": "77909645",
+   "links": {
+    "self": "/trips/77909645"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "route_pattern": {
+     "data": {
+      "id": "Red-1-0",
+      "type": "route_pattern"
+     }
+    },
+    "service": {
+     "data": {
+      "id": "RTL20264-hms46016-Saturday-01",
+      "type": "service"
+     }
+    },
+    "shape": {
+     "data": {
+      "id": "931_0009",
+      "type": "shape"
+     }
+    }
+   },
+   "type": "trip"
+  },
+  {
+   "attributes": {
+    "headsign": "Oak Grove"
+   },
+   "id": "77792193",
+   "links": {
+    "self": "/trips/77792193"
    },
    "relationships": {
     "route": {
@@ -1630,7 +1630,7 @@
     },
     "route_pattern": {
      "data": {
-      "id": "Orange-3-0",
+      "id": "Orange-3-1",
       "type": "route_pattern"
      }
     },
@@ -1642,7 +1642,7 @@
     },
     "shape": {
      "data": {
-      "id": "903_0026",
+      "id": "903_0029",
       "type": "shape"
      }
     }
@@ -1653,9 +1653,9 @@
    "attributes": {
     "headsign": "Ashmont"
    },
-   "id": "77909727",
+   "id": "77909807",
    "links": {
-    "self": "/trips/77909727"
+    "self": "/trips/77909807"
    },
    "relationships": {
     "route": {
@@ -1687,70 +1687,34 @@
   },
   {
    "attributes": {
-    "headsign": "Alewife"
+    "headsign": "Oak Grove"
    },
-   "id": "77909851",
+   "id": "77792162",
    "links": {
-    "self": "/trips/77909851"
+    "self": "/trips/77792162"
    },
    "relationships": {
     "route": {
      "data": {
-      "id": "Red",
+      "id": "Orange",
       "type": "route"
      }
     },
     "route_pattern": {
      "data": {
-      "id": "Red-3-1",
+      "id": "Orange-3-1",
       "type": "route_pattern"
      }
     },
     "service": {
      "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
+      "id": "RTL20264-hmo46016-Saturday-01",
       "type": "service"
      }
     },
     "shape": {
      "data": {
-      "id": "933_0019",
-      "type": "shape"
-     }
-    }
-   },
-   "type": "trip"
-  },
-  {
-   "attributes": {
-    "headsign": "Ashmont"
-   },
-   "id": "77909671",
-   "links": {
-    "self": "/trips/77909671"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "route_pattern": {
-     "data": {
-      "id": "Red-1-0",
-      "type": "route_pattern"
-     }
-    },
-    "service": {
-     "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
-      "type": "service"
-     }
-    },
-    "shape": {
-     "data": {
-      "id": "931_0009",
+      "id": "903_0029",
       "type": "shape"
      }
     }
@@ -1795,47 +1759,11 @@
   },
   {
    "attributes": {
-    "headsign": "Ashmont"
-   },
-   "id": "77909643",
-   "links": {
-    "self": "/trips/77909643"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "route_pattern": {
-     "data": {
-      "id": "Red-1-0",
-      "type": "route_pattern"
-     }
-    },
-    "service": {
-     "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
-      "type": "service"
-     }
-    },
-    "shape": {
-     "data": {
-      "id": "931_0009",
-      "type": "shape"
-     }
-    }
-   },
-   "type": "trip"
-  },
-  {
-   "attributes": {
     "headsign": "Alewife"
    },
-   "id": "77909852",
+   "id": "ADDED-1585019753",
    "links": {
-    "self": "/trips/77909852"
+    "self": "/trips/ADDED-1585019753"
    },
    "relationships": {
     "route": {
@@ -1851,86 +1779,11 @@
      }
     },
     "service": {
-     "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
-      "type": "service"
-     }
+     "data": null
     },
     "shape": {
      "data": {
-      "id": "933_0019",
-      "type": "shape"
-     }
-    }
-   },
-   "type": "trip"
-  },
-  {
-   "attributes": {
-    "headsign": "Forest Hills"
-   },
-   "id": "77792194",
-   "links": {
-    "self": "/trips/77792194"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Orange",
-      "type": "route"
-     }
-    },
-    "route_pattern": {
-     "data": {
-      "id": "Orange-3-0",
-      "type": "route_pattern"
-     }
-    },
-    "service": {
-     "data": {
-      "id": "RTL20264-hmo46016-Saturday-01",
-      "type": "service"
-     }
-    },
-    "shape": {
-     "data": {
-      "id": "903_0026",
-      "type": "shape"
-     }
-    }
-   },
-   "type": "trip"
-  },
-  {
-   "attributes": {
-    "headsign": "Alewife"
-   },
-   "id": "77909754",
-   "links": {
-    "self": "/trips/77909754"
-   },
-   "relationships": {
-    "route": {
-     "data": {
-      "id": "Red",
-      "type": "route"
-     }
-    },
-    "route_pattern": {
-     "data": {
-      "id": "Red-1-1",
-      "type": "route_pattern"
-     }
-    },
-    "service": {
-     "data": {
-      "id": "RTL20264-hms46016-Saturday-01",
-      "type": "service"
-     }
-    },
-    "shape": {
-     "data": {
-      "id": "931_0010",
+      "id": "canonical-933_0010",
       "type": "shape"
      }
     }
@@ -1975,11 +1828,11 @@
   },
   {
    "attributes": {
-    "headsign": "Alewife"
+    "headsign": "Braintree"
    },
-   "id": "77909806",
+   "id": "77909944",
    "links": {
-    "self": "/trips/77909806"
+    "self": "/trips/77909944"
    },
    "relationships": {
     "route": {
@@ -1990,7 +1843,7 @@
     },
     "route_pattern": {
      "data": {
-      "id": "Red-1-1",
+      "id": "Red-3-0",
       "type": "route_pattern"
      }
     },
@@ -2002,7 +1855,7 @@
     },
     "shape": {
      "data": {
-      "id": "931_0010",
+      "id": "933_0020",
       "type": "shape"
      }
     }
@@ -2013,9 +1866,9 @@
    "attributes": {
     "headsign": "Ashmont"
    },
-   "id": "77909699",
+   "id": "77909781",
    "links": {
-    "self": "/trips/77909699"
+    "self": "/trips/77909781"
    },
    "relationships": {
     "route": {
@@ -2047,11 +1900,152 @@
   },
   {
    "attributes": {
-    "headsign": "Forest Hills"
+    "headsign": "Alewife"
    },
-   "id": "77792163",
+   "id": "77909700",
    "links": {
-    "self": "/trips/77792163"
+    "self": "/trips/77909700"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "route_pattern": {
+     "data": {
+      "id": "Red-1-1",
+      "type": "route_pattern"
+     }
+    },
+    "service": {
+     "data": {
+      "id": "RTL20264-hms46016-Saturday-01",
+      "type": "service"
+     }
+    },
+    "shape": {
+     "data": {
+      "id": "931_0010",
+      "type": "shape"
+     }
+    }
+   },
+   "type": "trip"
+  },
+  {
+   "attributes": {
+    "headsign": "Alewife"
+   },
+   "id": "ADDED-1585019786",
+   "links": {
+    "self": "/trips/ADDED-1585019786"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "route_pattern": {
+     "data": {
+      "id": "Red-3-1",
+      "type": "route_pattern"
+     }
+    },
+    "service": {
+     "data": null
+    },
+    "shape": {
+     "data": {
+      "id": "canonical-933_0010",
+      "type": "shape"
+     }
+    }
+   },
+   "type": "trip"
+  },
+  {
+   "attributes": {
+    "headsign": "Alewife"
+   },
+   "id": "77909672",
+   "links": {
+    "self": "/trips/77909672"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "route_pattern": {
+     "data": {
+      "id": "Red-1-1",
+      "type": "route_pattern"
+     }
+    },
+    "service": {
+     "data": {
+      "id": "RTL20264-hms46016-Saturday-01",
+      "type": "service"
+     }
+    },
+    "shape": {
+     "data": {
+      "id": "931_0010",
+      "type": "shape"
+     }
+    }
+   },
+   "type": "trip"
+  },
+  {
+   "attributes": {
+    "headsign": "Alewife"
+   },
+   "id": "77909728",
+   "links": {
+    "self": "/trips/77909728"
+   },
+   "relationships": {
+    "route": {
+     "data": {
+      "id": "Red",
+      "type": "route"
+     }
+    },
+    "route_pattern": {
+     "data": {
+      "id": "Red-1-1",
+      "type": "route_pattern"
+     }
+    },
+    "service": {
+     "data": {
+      "id": "RTL20264-hms46016-Saturday-01",
+      "type": "service"
+     }
+    },
+    "shape": {
+     "data": {
+      "id": "931_0010",
+      "type": "shape"
+     }
+    }
+   },
+   "type": "trip"
+  },
+  {
+   "attributes": {
+    "headsign": "Oak Grove"
+   },
+   "id": "77792282",
+   "links": {
+    "self": "/trips/77792282"
    },
    "relationships": {
     "route": {
@@ -2062,7 +2056,7 @@
     },
     "route_pattern": {
      "data": {
-      "id": "Orange-3-0",
+      "id": "Orange-3-1",
       "type": "route_pattern"
      }
     },
@@ -2074,7 +2068,7 @@
     },
     "shape": {
      "data": {
-      "id": "903_0026",
+      "id": "903_0029",
       "type": "shape"
      }
     }
@@ -2085,9 +2079,9 @@
    "attributes": {
     "headsign": "Alewife"
    },
-   "id": "ADDED-1585019752",
+   "id": "ADDED-1585019767",
    "links": {
-    "self": "/trips/ADDED-1585019752"
+    "self": "/trips/ADDED-1585019767"
    },
    "relationships": {
     "route": {

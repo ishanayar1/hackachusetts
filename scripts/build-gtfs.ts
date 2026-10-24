@@ -37,7 +37,10 @@ const FACILITY_TYPES: Record<string, FacilityType> = {
   ramp: 'RAMP',
   'portable-boarding-lift': 'PORTABLE_BOARDING_LIFT',
   'bridge-plate': 'BRIDGE_PLATE',
+  'elevated-subplatform': 'ELEVATED_SUBPLATFORM',
 };
+/** Boarding aids that serve specific platforms (the station's platforms not in "excludes-stop"). */
+const BOARDING_TYPES = new Set<FacilityType>(['ELEVATED_SUBPLATFORM', 'PORTABLE_BOARDING_LIFT']);
 
 async function getZip(): Promise<Uint8Array> {
   const force = process.argv.includes('--force');
@@ -102,6 +105,7 @@ async function main() {
     'facilities.txt',
     'facilities_properties.txt',
     'shapes.txt',
+    'calendar.txt',
   ];
   const files = unzipSync(zipBuf, { filter: (f) => want.includes(f.name) });
   const text = (name: string) => {
@@ -137,23 +141,32 @@ async function main() {
   const repTrips = new Set([...canonical, ...typical].map((p) => p.representative_trip_id));
 
   // The "canonical-*" representative trips carry placeholder times (exactly 1 minute per stop),
-  // so ride times come from a sample of real scheduled trips on the same canonical patterns.
-  const SAMPLE_PER_PATTERN = 30;
+  // so ride times come from real scheduled trips on the same canonical patterns: every weekday
+  // (Wednesday) trip, so the median covers the whole service day. Falls back to the first trips
+  // of any service when the feed has no weekday calendar rows.
+  const weekday = new Set(csv(text('calendar.txt')).filter((c) => c.wednesday === '1').map((c) => c.service_id));
+  const FALLBACK_PER_PATTERN = 30;
   const canonicalIds = new Set(canonical.map((p) => p.route_pattern_id));
-  const sampleCount = new Map<string, number>();
-  const sampleTrips = new Set<string>();
+  const weekdayTrips = new Set<string>();
+  const fallbackTrips = new Set<string>();
+  const fallbackCount = new Map<string, number>();
 
   const tripShape = new Map<string, string>();
+  const tripRoute = new Map<string, string>();
   for (const t of csvFiltered(text('trips.txt'), new Set(SUBWAY))) {
     if (repTrips.has(t.trip_id)) tripShape.set(t.trip_id, t.shape_id);
     if (canonicalIds.has(t.route_pattern_id) && !t.trip_id.startsWith('canonical-')) {
-      const n = sampleCount.get(t.route_pattern_id) ?? 0;
-      if (n < SAMPLE_PER_PATTERN) {
-        sampleCount.set(t.route_pattern_id, n + 1);
-        sampleTrips.add(t.trip_id);
+      tripRoute.set(t.trip_id, t.route_id);
+      if (weekday.has(t.service_id)) weekdayTrips.add(t.trip_id);
+      const n = fallbackCount.get(t.route_pattern_id) ?? 0;
+      if (n < FALLBACK_PER_PATTERN) {
+        fallbackCount.set(t.route_pattern_id, n + 1);
+        fallbackTrips.add(t.trip_id);
       }
     }
   }
+  const sampleTrips = weekdayTrips.size ? weekdayTrips : fallbackTrips;
+  console.log(`Ride times from ${sampleTrips.size} ${weekdayTrips.size ? 'weekday' : 'sampled'} trips`);
 
   // stop_times is ~130 MB: scan lines and parse only the representative and sampled trips.
   const tripStops = new Map<string, { stop: string; seq: number; t: number | null }[]>();
@@ -176,8 +189,10 @@ async function main() {
       if (a.t === null || b.t === null) continue;
       const min = (b.t - a.t) / 60;
       if (min <= 0 || min > 30) continue;
-      // Keyed by platform pair and by station pair: some real trips stop at different platforms.
-      for (const key of [`${a.stop}>${b.stop}`, `${stationOf(a.stop)}>${stationOf(b.stop)}`]) {
+      // Keyed by route + platform pair (Green branches run the trunk at different speeds), by platform
+      // pair, and by station pair: some real trips stop at different platforms.
+      const pk = `${a.stop}>${b.stop}`;
+      for (const key of [`${tripRoute.get(id)}|${pk}`, pk, `${stationOf(a.stop)}>${stationOf(b.stop)}`]) {
         const arr = pairSamples.get(key) ?? [];
         arr.push(min);
         pairSamples.set(key, arr);
@@ -234,7 +249,10 @@ async function main() {
       rideKeys.add(key);
       // Real-trip median first; the representative trip's own times are placeholders, so fall back to 2 min.
       const raw =
-        medianMinutes(`${a.stop}>${b.stop}`) ?? medianMinutes(`${stationOf(a.stop)}>${stationOf(b.stop)}`) ?? 2;
+        medianMinutes(`${route}|${a.stop}>${b.stop}`) ??
+        medianMinutes(`${a.stop}>${b.stop}`) ??
+        medianMinutes(`${stationOf(a.stop)}>${stationOf(b.stop)}`) ??
+        2;
       rides.push({ from: a.stop, to: b.stop, route, directionId: dir, minutes: Math.max(0.5, Math.round(raw * 10) / 10) });
     }
   }
@@ -267,6 +285,7 @@ async function main() {
   const facRows = csv(text('facilities.txt'));
   const facilities: Facility[] = [];
   const parking: ParkingLot[] = [];
+  const ridePlatforms = new Set(rides.flatMap((r) => [r.from, r.to]));
   for (const f of facRows) {
     const stationId = stationOf(f.stop_id) ?? f.stop_id;
     if (!subwayStations.has(stationId)) continue;
@@ -278,6 +297,18 @@ async function main() {
       if (alt) fac.alternateServiceText = alt;
       const ex = (props.get(f.facility_id) ?? []).filter((p) => p.property_id === 'excludes-stop').map((p) => p.value);
       if (ex.length) fac.excludesStops = ex;
+      if (BOARDING_TYPES.has(type)) {
+        // Mini-high platforms and mobile lifts serve the station's subway platforms that "excludes-stop"
+        // does not name (e.g. subplat-cenav-1 excludes 70269, so it serves the Ashmont-bound 70270).
+        // Only platforms on a ride pattern count; ones serving no subway platform (Commuter Rail) are dropped.
+        const exSet = new Set(ex);
+        const served = Object.values(platforms)
+          .filter((p) => p.stationId === stationId && !exSet.has(p.id) && ridePlatforms.has(p.id))
+          .map((p) => p.id)
+          .sort();
+        if (!served.length) continue;
+        fac.platformIds = served;
+      }
       facilities.push(fac);
     } else if (f.facility_type === 'parking-area') {
       const lot: ParkingLot = {
@@ -341,7 +372,12 @@ async function main() {
     const s = stops.get(id);
     if (!s) return;
     const name = s.location_type === '0' ? s.platform_name || s.stop_name : s.stop_name;
-    sp.nodes[id] = { kind: kindOf(s), wheelchair: wc(s.wheelchair_boarding), ...(name ? { name } : {}) };
+    const kind = kindOf(s);
+    const lat = num(s.stop_lat);
+    const lon = num(s.stop_lon);
+    // Entrances carry coordinates so walks can end at the chosen step-free door.
+    const at = kind === 'entrance' && lat !== null && lon !== null ? { lat: r5(lat), lon: r5(lon) } : {};
+    sp.nodes[id] = { kind, wheelchair: wc(s.wheelchair_boarding), ...(name ? { name } : {}), ...at };
   };
   for (const sid of subwayStations) {
     const sp: StationPathways = { nodes: {}, edges: [] };
@@ -376,7 +412,13 @@ async function main() {
     if (sp.edges.length) continue;
     const st = stops.get(sid)!;
     const entrance = `street-${sid}`;
-    sp.nodes[entrance] = { kind: 'entrance', wheelchair: wc(st.wheelchair_boarding), name: `${st.stop_name} (street level)` };
+    sp.nodes[entrance] = {
+      kind: 'entrance',
+      wheelchair: wc(st.wheelchair_boarding),
+      name: `${st.stop_name} (street level)`,
+      lat: r5(Number(st.stop_lat)),
+      lon: r5(Number(st.stop_lon)),
+    };
     for (const pid of Object.keys(sp.nodes).filter((n) => platforms[n])) {
       sp.edges.push({ from: entrance, to: pid, mode: 1, facilityId: null, seconds: 30 });
       sp.edges.push({ from: pid, to: entrance, mode: 1, facilityId: null, seconds: 30 });

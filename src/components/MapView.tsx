@@ -18,6 +18,8 @@ export type FlyTarget = { lng: number; lat: number; zoom?: number; seq: number }
 export type MapViewProps = {
   stations: GeoJSON.FeatureCollection;
   route: GeoJSON.FeatureCollection;
+  /** Walking legs, drawn as a dashed line. */
+  walk?: GeoJSON.FeatureCollection;
   crashMode: CrashMode;
   selectedStationId: string | null;
   selectedHex: string | null;
@@ -32,17 +34,22 @@ function stepColor(prop: unknown, bins: { min: number; color: string }[]) {
   return expr;
 }
 
-const STATION_LAYERS = ['stations-yes', 'stations-no', 'stations-unknown'];
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+const STATION_LAYERS = ['stations-yes', 'stations-partial', 'stations-no', 'stations-unknown'];
 
 // One circle per intersection; it grows with zoom so dense areas stay readable zoomed out.
 const CRASH_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 2.5, 14, 5, 17, 9];
+// Selection ring: 4 px larger at every stop. MapLibre only allows "zoom" at the top level of interpolate,
+// so ['+', CRASH_RADIUS, 4] is rejected.
+const CRASH_SELECTED_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 6.5, 14, 9, 17, 13];
 
 // MapLibre 6 looks for its worker next to its own bundle file, which the bundler renames.
 // Point it at the worker emitted as a static asset instead.
 setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).href);
 
 export default function MapView(props: MapViewProps) {
-  const { stations, route, crashMode, selectedStationId, selectedHex, flyTo, onSelectStation, onSelectHex } = props;
+  const { stations, route, walk, crashMode, selectedStationId, selectedHex, flyTo, onSelectStation, onSelectHex } = props;
   const mapRef = useRef<MapRef>(null);
   const [styleIdx, setStyleIdx] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -57,14 +64,19 @@ export default function MapView(props: MapViewProps) {
 
   const onError = useCallback(
     (e: { error?: Error }) => {
-      // Only a style that never loaded triggers the fallback; tile hiccups after load are ignored.
-      if (loaded) return;
-      console.warn('Map style error', e.error?.message);
-      if (styleIdx < STYLES.length - 1) {
-        setStyleIdx((i) => i + 1);
-      } else {
-        setFailed(true);
+      const message = e.error?.message ?? '';
+      // Layer validation errors ("layers.<id>...") are bugs in our layers, not a failed base map:
+      // switching styles for them wipes the base map. Log them and keep the style.
+      if (loaded || message.startsWith('layers.')) {
+        console.warn('Map error', message);
+        return;
       }
+      console.warn('Map style error', message);
+      // Defer: MapLibre can fire 'error' while react-map-gl renders a <Layer>, and setState during render is not allowed.
+      queueMicrotask(() => {
+        if (styleIdx < STYLES.length - 1) setStyleIdx((i) => i + 1);
+        else setFailed(true);
+      });
     },
     [loaded, styleIdx],
   );
@@ -148,7 +160,7 @@ export default function MapView(props: MapViewProps) {
                   filter={['==', ['get', 'site'], selectedHex ?? '']}
                   paint={{
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'circle-radius': ['+', CRASH_RADIUS, 4] as any,
+                    'circle-radius': CRASH_SELECTED_RADIUS as any,
                     'circle-color': 'rgba(0,0,0,0)',
                     'circle-stroke-color': '#111827',
                     'circle-stroke-width': 3,
@@ -183,6 +195,20 @@ export default function MapView(props: MapViewProps) {
                   type="line"
                   layout={{ 'line-cap': 'round', 'line-join': 'round' }}
                   paint={{ 'line-color': ['get', 'color'], 'line-width': 6 }}
+                />
+              </Source>
+              <Source id="walk" type="geojson" data={walk ?? EMPTY_FC}>
+                <Layer
+                  id="walk-casing"
+                  type="line"
+                  layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#ffffff', 'line-width': 8 }}
+                />
+                <Layer
+                  id="walk-line"
+                  type="line"
+                  layout={{ 'line-cap': 'butt', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#111827', 'line-width': 4, 'line-dasharray': [2, 1.5] }}
                 />
               </Source>
               <Source id="stations" type="geojson" data={stations}>
@@ -232,6 +258,30 @@ export default function MapView(props: MapViewProps) {
                     'circle-stroke-color': '#ffffff',
                     'circle-stroke-width': 2,
                   }}
+                />
+                <Layer
+                  id="stations-partial"
+                  type="circle"
+                  filter={['==', ['get', 'state'], 'partial']}
+                  paint={{
+                    'circle-radius': 7,
+                    'circle-color': '#047857',
+                    'circle-stroke-color': '#b45309',
+                    'circle-stroke-width': 3,
+                  }}
+                />
+                <Layer
+                  id="stations-partial-mark"
+                  type="symbol"
+                  filter={['==', ['get', 'state'], 'partial']}
+                  layout={{
+                    'text-field': '!',
+                    'text-font': ['Noto Sans Bold'],
+                    'text-size': 12,
+                    'text-allow-overlap': true,
+                    'text-ignore-placement': true,
+                  }}
+                  paint={{ 'text-color': '#ffffff' }}
                 />
                 <Layer
                   id="stations-selected"

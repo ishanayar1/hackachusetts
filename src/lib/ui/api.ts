@@ -6,19 +6,27 @@ export type { ApiEnvelope, Facility, NormalizedAlert, ParkingLot, Prediction, St
 
 export type AlertsData = { alerts: NormalizedAlert[]; closedFacilityIds: string[] };
 
+/** A platform (direction) that has no step-free path right now, and the facilities that cause it. */
+export type BlockedPlatform = { platformId: string; name: string; facilityIds: string[] };
+
 export type StationStatusRow = {
   id: string;
   name: string;
   stepFree: boolean;
   approximate: boolean;
   blockedBy: string[];
+  /** Some platform is blocked but at least one works. Optional: older servers do not send it. */
+  partial?: boolean;
+  blockedPlatforms?: BlockedPlatform[];
 };
 export type StationsStatusData = { stations: StationStatusRow[]; closedFacilityIds: string[] };
+
+export type StationStatusPlus = StationStatus & { partial?: boolean; blockedPlatforms?: BlockedPlatform[] };
 
 export type StationDetailData = {
   station: Station;
   facilities: (Facility & { closed: boolean })[];
-  status: StationStatus;
+  status: StationStatusPlus;
   parking: ParkingLot[];
   alerts: NormalizedAlert[];
 };

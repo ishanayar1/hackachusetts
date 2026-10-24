@@ -1,36 +1,93 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# LastMile
 
-## Getting Started
+LastMile is a mobile-friendly web app for people who can't use stairs: wheelchair users, parents with strollers, people with canes or heavy luggage. It shows which MBTA elevators, ramps and portable lifts are out of service right now, plans step-free subway trips that reroute around closures, tells you which station entrance to use, and lists things to watch for on the walk: poor curb ramps, open sidewalk reports and places with recorded pedestrian and bike crashes. Everything the map shows is also available as a text list.
 
-First, run the development server:
+Built for Hackachusetts 2026 (Civic Action track) in Kiro. Next.js 16 (App Router), React 19, MapLibre via react-map-gl, Tailwind 4, SWR.
+
+## Run locally
+
+Requires Node 22+.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm ci
+echo "MBTA_API_KEY=your-key" > .env
+npm run dev            # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### Environment variables
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Name | Required | Notes |
+|---|---|---|
+| `MBTA_API_KEY` | Recommended | MBTA V3 API key ([get one free](https://api-v3.mbta.com/)). The code also accepts a variable named `mbta`. Without a key the app still works with lower MBTA rate limits. Server-only: never prefix it with `NEXT_PUBLIC_`. |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Put it in `.env` (or `.env.local`). Both are gitignored; never commit a key.
 
-## Learn More
+### npm scripts
 
-To learn more about Next.js, take a look at the following resources:
+| Script | What it does |
+|---|---|
+| `npm run dev` | Dev server on port 3000 |
+| `npm run build` / `npm start` | Production build / serve |
+| `npm test` | Unit and property-based tests (Vitest + fast-check) |
+| `npm run typecheck` | `next typegen` + `tsc --noEmit` |
+| `npm run lint` | ESLint |
+| `npm run build:data` | Rebuild `public/data/*.json` from the MBTA GTFS feed (`scripts/build-gtfs.ts`) |
+| `npm run capture:demo` | Save a live MBTA alerts snapshot to `public/data/demo-alerts.json` for demo mode |
+| `npm run mcp` | Start the MBTA MCP server used from Kiro (`mcp/mbta/server.ts`) |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Docker
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The image is a multi-stage `node:22-alpine` build of the Next.js standalone server, running as a non-root user. Keys are passed in at runtime via `env_file` and are never baked into the image (`.env*` is in `.dockerignore`).
 
-## Deploy on Vercel
+```bash
+docker compose up --build -d   # http://localhost:3000
+docker compose logs -f web
+docker compose down
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+`docker-compose.yml` loads `.env` and `.env.local` if present. Without compose:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+docker build -t lastmile .
+docker run --rm -p 3000:3000 -e MBTA_API_KEY=your-key lastmile
+```
+
+Note: phones need HTTPS for location, so use the Vercel link (not a LAN Docker URL) for phone testing.
+
+## Deploy to Vercel
+
+1. In the Vercel dashboard, choose **Add New > Project** and import the GitHub repo `ishanayar1/hackachusetts`.
+2. Framework preset: **Next.js** (defaults for build command and output are fine; no `vercel.json` needed).
+3. Under **Environment Variables**, add `MBTA_API_KEY` with your MBTA V3 key (Production and Preview).
+4. Click **Deploy**.
+
+`public/data/` is committed, so the build needs no downloads. API routes read those files at runtime; `next.config.ts` ships them with the functions via `outputFileTracingIncludes`. `output: 'standalone'` is only used by Docker and is ignored by Vercel.
+
+## Data sources and attribution
+
+- **MBTA**: GTFS static feed (stations, entrances, pathways, elevators, parking) and the V3 API (alerts, facilities, predictions, vehicles). Data provided by the Massachusetts Bay Transportation Authority under the [MBTA developer license](https://www.mbta.com/developers). Not an official MBTA product.
+- **City of Boston / Analyze Boston** ([data.boston.gov](https://data.boston.gov)): Vision Zero crash records (shown as recorded crashes, historical, not live), 311 service requests (open sidewalk and street-light cases) and the Pedestrian Ramp Inventory.
+- **Walking directions**: [Valhalla](https://github.com/valhalla/valhalla) public server (FOSSGIS, `valhalla1.openstreetmap.de`) with an OSRM foot-routing fallback, then a straight-line estimate. Walking legs are estimates.
+- **Map**: [OpenFreeMap](https://openfreemap.org) tiles, map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
+
+Crash records reflect police reporting and are not a measure of how dangerous a place is for any one trip.
+
+## Crash-history pipeline (`crash-risk/`)
+
+`crash-risk/` is a separate Python pipeline (pandas, scikit-learn, h3) over the Boston Vision Zero data in `vision-zero/data.csv`. It bins crashes into H3 res-9 hexagons, labels them with street names via OpenStreetMap Nominatim (cached in `geocache.json`) and writes `risk.geojson`, which it also copies to `public/data/crash-risk.geojson`. The Next.js app does not run any Python; it only reads that committed file and shows it as recorded crash history.
+
+```bash
+cd crash-risk
+python3 -m pip install -r requirements.txt
+python3 predict.py   # rebuilds risk.geojson and public/data/crash-risk.geojson
+```
+
+See `crash-risk/README.md` for details.
+
+## Repo layout
+
+- `src/app` – pages and API route handlers (`/api/alerts`, `/api/route`, `/api/walk`, `/api/stations`, ...)
+- `src/lib` – routing, MBTA client, warnings, shared types (`src/lib/mbta/types.ts`)
+- `public/data` – committed static data built by the scripts above
+- `mcp/` – MBTA MCP server for Kiro; `.kiro/` – Kiro specs, steering and hooks
+- `docs/` – plan and tech-stack notes

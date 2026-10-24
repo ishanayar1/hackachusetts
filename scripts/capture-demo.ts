@@ -8,6 +8,7 @@ import { ALERTS_PATH } from '../src/lib/mbta/alerts';
 import { predictionsPath, VEHICLES_PATH } from '../src/lib/mbta/live';
 
 const root = path.resolve(__dirname, '..');
+const DEMO_PREDICTION_STOPS = ['place-pktrm', 'place-dwnxg', 'place-gover', 'place-sstat', 'place-north', 'place-alfcl'];
 const fixtures = path.join(root, 'tests', 'fixtures');
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -56,9 +57,26 @@ async function main() {
     JSON.stringify({ capturedAt, data: vehData, included: keepIncluded(veh.body, vehData) }, null, 1),
   );
 
+  // Demo fallbacks served by /api/vehicles and /api/predictions when MBTA and the cache both fail.
+  await writeFile(path.join(root, 'public', 'data', 'demo-vehicles.json'), JSON.stringify(veh.body));
+  const demoStations: Record<string, unknown> = {};
+  let demoPredCount = 0;
+  for (const stop of DEMO_PREDICTION_STOPS) {
+    const r = await mbtaGet(predictionsPath([stop]), { ttlMs: 0 });
+    if (r.source !== 'v3') continue;
+    const data: any[] = r.body.data ?? [];
+    demoStations[stop] = { data, included: keepIncluded(r.body, data) };
+    demoPredCount += data.length;
+  }
+  await writeFile(
+    path.join(root, 'public', 'data', 'demo-predictions.json'),
+    JSON.stringify({ capturedAt, stations: demoStations }),
+  );
+
   console.log(
     `alerts=${all.length} (fixture ${picked.length}, dwnxg ${dwnxg.length}, elevator ${elev.length}) ` +
-      `predictions=${preds.body.data?.length ?? 0} vehicles=${veh.body.data?.length ?? 0}`,
+      `predictions=${preds.body.data?.length ?? 0} vehicles=${veh.body.data?.length ?? 0} ` +
+      `demo-predictions=${demoPredCount} across ${Object.keys(demoStations).length} stations`,
   );
 }
 

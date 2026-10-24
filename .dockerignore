@@ -1,0 +1,41 @@
+# Secrets: injected at runtime via env_file, never copied into the image.
+.env
+.env.*
+!.env.example
+
+# Dependencies / build output (rebuilt inside the image)
+node_modules
+.next
+out
+build
+dist
+coverage
+*.tsbuildinfo
+next-env.d.ts
+.vercel
+
+# VCS, editor and agent folders
+.git
+.gitignore
+.claude
+.remember
+.kiro
+.vscode
+.idea
+
+# Not needed to build or run the web app
+docs
+research
+tests
+data
+vision-zero
+crash-risk
+# Dev-time tools (data build scripts, Kiro MCP server); the app never imports them.
+scripts
+mcp
+Dockerfile
+docker-compose.yml
+.dockerignore
+npm-debug.log*
+*.pem
+.DS_Store

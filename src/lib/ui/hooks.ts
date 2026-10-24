@@ -14,7 +14,7 @@ import {
   type StationDetailData,
   type StationsStatusData,
 } from './api';
-import type { StationPathways } from '@/lib/mbta/types';
+import { walkUrl, type LatLon, type WalkResult } from './walk';
 
 const STATIC = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false, shouldRetryOnError: false };
 const LIVE = { refreshWhenHidden: false, refreshWhenOffline: false, keepPreviousData: true };
@@ -32,16 +32,23 @@ export function useFacilities() {
   return { facilities: data, byId, error };
 }
 
-/** Platform names ("Alewife", "Forest Hills") used for "toward ..." wording. */
-export function usePlatformNames() {
-  const { data } = useSWR<{ platforms: Record<string, { name: string }> }>('/data/network.json', fetchJson, STATIC);
+/** Platform names ("Alewife", "Forest Hills"): fallback for "toward ..." when /api/route has no leg.towards. */
+export function usePlatformNames(enabled = true) {
+  const { data } = useSWR<{ platforms: Record<string, { name: string }> }>(
+    enabled ? '/data/network.json' : null,
+    fetchJson,
+    STATIC,
+  );
   return data?.platforms;
 }
 
-/** Entrance names live in pathways.json (large), so only load it once a route needs them. */
-export function usePathways(enabled: boolean) {
-  const { data } = useSWR<Record<string, StationPathways>>(enabled ? '/data/pathways.json' : null, fetchJson, STATIC);
-  return data;
+/** Walking route between two points (server caches and falls back Valhalla -> OSRM -> straight line). */
+export function useWalk(from: LatLon | null, to: LatLon | null) {
+  return useSWR<ApiEnvelope<WalkResult>>(from && to ? walkUrl(from, to) : null, fetchJson, {
+    revalidateOnFocus: false,
+    revalidateIfStale: false,
+    shouldRetryOnError: false,
+  });
 }
 
 export function useAlerts() {

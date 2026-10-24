@@ -21,6 +21,27 @@ export async function getLiveAlerts(parentOf: ParentOf, fallback?: () => Promise
   return { alerts, closedFacilityIds: closedFacilityIds(alerts, now), result };
 }
 
+/**
+ * Live alerts, or the demo snapshot's closures (source 'demo') when live alerts cannot be loaded at all,
+ * so /api/route and the station screens degrade to demo data instead of a 503.
+ * Throws only when the demo snapshot is unavailable too.
+ */
+export async function getAlertsOrDemo(
+  parentOf: ParentOf,
+  demo: () => Promise<unknown>,
+  live: () => Promise<LiveAlerts> = () => getLiveAlerts(parentOf, demo),
+): Promise<LiveAlerts> {
+  try {
+    return await live();
+  } catch {
+    // fall through to the demo snapshot
+  }
+  const body = await demo();
+  const now = new Date();
+  const alerts = normalizeAlerts(body, parentOf, now);
+  return { alerts, closedFacilityIds: closedFacilityIds(alerts, now), result: { body, source: 'demo', fetchedAt: now.getTime() } };
+}
+
 /** Parse "id1,id2" into validated facility ids. Returns null when any id is malformed. */
 export function parseClosedParam(raw: string | null | undefined): string[] | null {
   if (!raw) return [];

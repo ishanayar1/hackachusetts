@@ -3,11 +3,18 @@
 import type { DataSource } from '@/lib/mbta/types';
 import { formatTime, STATE_TEXT, type StepFreeState } from '@/lib/ui/format';
 
-/** Same shapes as the map: filled green dot, hollow red ring with ×, small grey dot. */
+/** Same shapes as the map: filled green dot, green dot in an amber ring with "!", hollow red ring with ×, small grey dot. */
 export function StateIcon({ state, size = 18 }: { state: StepFreeState; size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 20 20" aria-hidden="true" className="shrink-0">
       {state === 'yes' && <circle cx="10" cy="10" r="7" fill="#047857" stroke="#fff" strokeWidth="2" />}
+      {state === 'partial' && (
+        <>
+          <circle cx="10" cy="10" r="7.5" fill="#047857" stroke="#b45309" strokeWidth="3" />
+          <path d="M10 5.5v5.5" stroke="#fff" strokeWidth="2.2" strokeLinecap="round" />
+          <circle cx="10" cy="14" r="1.3" fill="#fff" />
+        </>
+      )}
       {state === 'no' && (
         <>
           <circle cx="10" cy="10" r="7" fill="#fff" stroke="#b91c1c" strokeWidth="3" />
@@ -49,3 +56,19 @@ export const btn =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-slate-700 bg-white px-3 py-2 text-sm font-semibold text-slate-900 hover:bg-slate-100 disabled:opacity-50';
 export const btnPrimary =
   'inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-blue-800 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-900 disabled:opacity-50';
+
+/** Star / unstar a station for "My stations". Text changes too, so state is not shown by the icon alone. */
+export function StarButton({ saved, name, onToggle }: { saved: boolean; name: string; onToggle: () => void }) {
+  return (
+    <button
+      type="button"
+      className={btn}
+      aria-pressed={saved}
+      onClick={onToggle}
+    >
+      <span aria-hidden="true">{saved ? '★' : '☆'}</span>
+      {saved ? 'Saved' : 'Save'}
+      <span className="sr-only"> {name} to My stations</span>
+    </button>
+  );
+}
