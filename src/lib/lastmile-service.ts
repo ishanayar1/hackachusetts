@@ -2,7 +2,7 @@
 import { ALERTS_PATH, closedFacilityIds, normalizeAlerts, type ParentOf } from '@/lib/mbta/alerts';
 import { mbtaGet, type MbtaResult } from '@/lib/mbta/client';
 import type { NormalizedAlert } from '@/lib/mbta/types';
-import { planStepFree, stationStatus, type RouteResult } from '@/lib/router';
+import { planStepFree, stationEntrances, stationStatus, type RouteResult } from '@/lib/router';
 import { FACILITY_ID_RE, type FullStaticData } from '@/lib/static-data-fs';
 
 export function parentOfFromStatic(data: FullStaticData): ParentOf {
@@ -62,6 +62,7 @@ export function stationDetail(data: FullStaticData, stationId: string, alerts: N
   if (!station) return null;
   const closed = new Set(closedIds);
   const facilityIds = new Set(station.facilityIds);
+  // Each facility keeps its facilities.json fields, including alternateServiceText when MBTA gives one.
   const facilities = data.facilities
     .filter((f) => f.stationId === stationId || facilityIds.has(f.id))
     .map((f) => ({ ...f, closed: closed.has(f.id) }));
@@ -69,6 +70,8 @@ export function stationDetail(data: FullStaticData, stationId: string, alerts: N
   return {
     station,
     facilities,
+    /** Street doors with cleaned names and whether each is step-free given the current closures. */
+    entrances: stationEntrances(data, stationId, closed),
     status: stationStatus(data, stationId, closed),
     parking: data.parking.filter((p) => p.stationId === stationId),
     alerts: alerts.filter((a) => a.stationIds.includes(stationId) || a.facilityIds.some((f) => here.has(f))),

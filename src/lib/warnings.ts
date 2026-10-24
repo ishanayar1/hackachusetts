@@ -7,8 +7,24 @@ import { toCrashSpots, type CrashSpot } from './crash';
 
 export type Hazard = { id: string; type: string; label: string; openedAt: string; lat: number; lon: number };
 export type Ramp = { id: string; condition: string; lat: number; lon: number };
-export type WarningData = { crashSpots: CrashSpot[]; hazards: Hazard[]; ramps: Ramp[] };
+/** Boston Vision Zero fatality record (public/data/fatalities.json). `date` is YYYY-MM-DD (Boston time). */
+export type Fatality = { id: string; date: string; mode: string; label: string; lat: number; lon: number };
+/** Resident-reported Vision Zero safety concern (public/data/safety-concerns.json); no free-text comments. */
+export type SafetyConcern = { id: string; date: string; mode: string; concern: string; lat: number; lon: number };
+export type WarningData = {
+  crashSpots: CrashSpot[];
+  hazards: Hazard[];
+  ramps: Ramp[];
+  fatalities?: Fatality[];
+  safetyConcerns?: SafetyConcern[];
+};
 export type WalkWarnings = {
+  /** Residents' reported danger spots within CONCERN_RADIUS_M of the walk, nearest first, capped at MAX_CONCERNS. */
+  safetyConcerns?: { concern: string; date: string }[];
+  safetyConcernTotal?: number;
+  /** Recorded fatal crashes within FATAL_RADIUS_M of the walk, newest first, capped at MAX_FATAL. */
+  fatalCrashes?: { date: string; mode: string; label: string }[];
+  fatalTotal?: number;
   crashAreas: { site: string; label: string; pedBike: number }[];
   /** Nearest hazards, capped at MAX_HAZARDS; hazardTotal is the uncapped count (after de-duplication). */
   hazards: Hazard[];
@@ -32,6 +48,10 @@ export const MAX_RAMPS = 10;
 export const HAZARD_MAX_AGE_DAYS = 120;
 /** Separate 311 cases with the same type and label, opened the same day, within this distance are one hazard. */
 export const HAZARD_DUP_RADIUS_M = 15;
+export const CONCERN_RADIUS_M = 40;
+export const MAX_CONCERNS = 5;
+export const FATAL_RADIUS_M = 60;
+export const MAX_FATAL = 5;
 
 const DAY_MS = 86_400_000;
 
@@ -113,11 +133,35 @@ export function walkWarnings(
     rampTotal: 0,
     poorRampTotal: 0,
     lipOnlyRampTotal: 0,
+    safetyConcerns: [],
+    safetyConcernTotal: 0,
+    fatalCrashes: [],
+    fatalTotal: 0,
   };
   if (line.length === 0 || !data) return empty;
 
   const nearCrash = bbox(line, CRASH_RADIUS_M);
   const nearItem = bbox(line, radiusM);
+
+  const nearConcern = bbox(line, CONCERN_RADIUS_M);
+  const concernsWithD: { c: SafetyConcern; d: number }[] = [];
+  for (const c of Array.isArray(data.safetyConcerns) ? data.safetyConcerns : []) {
+    if (!c || !Number.isFinite(c.lat) || !Number.isFinite(c.lon) || !nearConcern(c.lon, c.lat)) continue;
+    const d = distanceToLineM(c.lon, c.lat, line);
+    if (d <= CONCERN_RADIUS_M) concernsWithD.push({ c, d });
+  }
+  concernsWithD.sort((a, b) => a.d - b.d || b.c.date.localeCompare(a.c.date) || a.c.id.localeCompare(b.c.id));
+
+  const fatal = (Array.isArray(data.fatalities) ? data.fatalities : [])
+    .filter(
+      (f) =>
+        f &&
+        Number.isFinite(f.lat) &&
+        Number.isFinite(f.lon) &&
+        nearCrash(f.lon, f.lat) &&
+        distanceToLineM(f.lon, f.lat, line) <= FATAL_RADIUS_M,
+    )
+    .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id));
 
   const crashAreas = (data.crashSpots ?? [])
     .filter(
@@ -170,6 +214,10 @@ export function walkWarnings(
     rampTotal: rampsWithD.length,
     poorRampTotal: rampsWithD.filter(({ r }) => isPoorRamp(r.condition)).length,
     lipOnlyRampTotal: rampsWithD.filter(({ r }) => isLipOnlyRamp(r.condition)).length,
+    safetyConcerns: concernsWithD.slice(0, MAX_CONCERNS).map(({ c }) => ({ concern: c.concern, date: c.date })),
+    safetyConcernTotal: concernsWithD.length,
+    fatalCrashes: fatal.slice(0, MAX_FATAL).map((f) => ({ date: f.date, mode: f.mode, label: f.label })),
+    fatalTotal: fatal.length,
   };
 }
 
@@ -183,16 +231,23 @@ function readJson(dir: string, file: string): unknown {
 
 const cache = new Map<string, WarningData>();
 
-/** Server-side loader for public/data/{crash-risk.geojson,hazards.json,ramps.json}. Cached per dir; missing files -> []. */
+/**
+ * Server-side loader for public/data/{crash-risk.geojson,hazards.json,ramps.json,fatalities.json,safety-concerns.json}.
+ * Cached per dir; missing files -> [].
+ */
 export function loadWarningDataFromDisk(dir: string): WarningData {
   const hit = cache.get(dir);
   if (hit) return hit;
   const hazards = readJson(dir, 'hazards.json');
   const ramps = readJson(dir, 'ramps.json');
+  const fatalities = readJson(dir, 'fatalities.json');
+  const concerns = readJson(dir, 'safety-concerns.json');
   const data: WarningData = {
     crashSpots: toCrashSpots(readJson(dir, 'crash-risk.geojson')),
     hazards: Array.isArray(hazards) ? (hazards as Hazard[]) : [],
     ramps: Array.isArray(ramps) ? (ramps as Ramp[]) : [],
+    fatalities: Array.isArray(fatalities) ? (fatalities as Fatality[]) : [],
+    safetyConcerns: Array.isArray(concerns) ? (concerns as SafetyConcern[]) : [],
   };
   cache.set(dir, data);
   return data;

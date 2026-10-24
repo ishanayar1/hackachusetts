@@ -12,6 +12,12 @@ export type WalkWarnings = {
   rampTotal?: number;
   poorRampTotal?: number;
   lipOnlyRampTotal?: number;
+  /** Vision Zero resident reports near the walk (capped list; safetyConcernTotal is the full count). */
+  safetyConcerns?: { concern: string; date: string }[];
+  safetyConcernTotal?: number;
+  /** Recorded fatal crashes near the walk, newest first (capped list; fatalTotal is the full count). */
+  fatalCrashes?: { date: string; mode: string; label: string }[];
+  fatalTotal?: number;
 };
 
 export type WalkResult = {
@@ -76,8 +82,37 @@ export function warningLines(w: WalkWarnings | undefined): string[] {
   if (poor > 0) parts.push(`${poor} curb ${poor === 1 ? 'ramp' : 'ramps'} in poor condition`);
   if (lip > 0) parts.push(`${lip}${poor > 0 ? '' : ` curb ${lip === 1 ? 'ramp' : 'ramps'}`} with a lip at the edge`);
   if (parts.length) out.push(`${parts.join(', ')} near your route`);
+  const fatal = w.fatalCrashes ?? [];
+  for (const f of fatal) {
+    const year = /^\d{4}/.test(f.date ?? '') ? f.date.slice(0, 4) : 'an unknown year';
+    out.push(`Fatal crash recorded here in ${year} (${f.mode || 'mode not recorded'})${f.label ? `: ${f.label}` : ''}`);
+  }
+  const moreFatal = (w.fatalTotal ?? fatal.length) - fatal.length;
+  if (moreFatal > 0) out.push(`And ${moreFatal} more recorded fatal ${moreFatal === 1 ? 'crash' : 'crashes'} along this walk`);
+  const concerns = w.safetyConcerns ?? [];
+  for (const c of concerns) out.push(`Residents reported ${c.concern} here (${formatYmd(c.date)})`);
+  const moreConcerns = (w.safetyConcernTotal ?? concerns.length) - concerns.length;
+  if (moreConcerns > 0) {
+    out.push(`And ${moreConcerns} more resident ${moreConcerns === 1 ? 'report' : 'reports'} along this walk`);
+  }
   return out;
 }
+
+/** "2023-11-27" -> "Nov 27, 2023" without a UTC shift (new Date("2023-11-27") is midnight UTC = the 26th in Boston). */
+export function formatYmd(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ymd ?? '');
+  if (!m) return ymd;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], 12));
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+}
+
+/** Demo destinations for "End at a place". Coordinates are the main public entrance / gate. */
+export const DEMO_DESTINATIONS: Place[] = [
+  { label: 'Boston Public Library (Copley)', lat: 42.34935, lon: -71.07816 },
+  { label: 'Mass General Hospital', lat: 42.36268, lon: -71.06876 },
+  { label: 'Fenway Park', lat: 42.34668, lon: -71.09723 },
+  { label: 'Harvard Yard', lat: 42.37443, lon: -71.11693 },
+];
 
 export function haversineM(a: LatLon, b: LatLon): number {
   const R = 6371000;

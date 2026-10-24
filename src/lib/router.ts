@@ -2,12 +2,17 @@
 // Model: platforms are joined by directed RideEdges (network.json); inside a station the
 // pathway graph (pathways.json) decides whether a wheelchair user can get from a street
 // entrance to a platform, or between two platforms, with the currently closed facilities removed.
+import { cleanEntranceName, doorNumber } from '@/lib/entrance-name';
 import { SUBWAY_ROUTES } from '@/lib/mbta/types';
 import type { Facility, Network, PathwayEdge, RideEdge, RouteId, Station, StationPathways } from '@/lib/mbta/types';
 
+/** Typical weekday daytime headway (minutes) per route and direction, from GTFS stop_times. */
+export type Headways = Partial<Record<RouteId, { 0: number; 1: number }>>;
+
 export type StaticData = {
   stations: Station[];
-  network: Network;
+  /** headways is optional so older network.json files (and test fixtures) still load; waits are then 0. */
+  network: Network & { headways?: Headways };
   pathways: Record<string, StationPathways>;
   /** Optional: mini-high platforms (ELEVATED_SUBPLATFORM) and mobile lifts with platformIds gate boarding at those platforms. */
   facilities?: Facility[];
@@ -22,7 +27,13 @@ export type RideLeg = {
   fromStation: string;
   toStation: string;
   stationIds: string[];
+  /** Minutes on the train (not counting the wait). */
   minutes: number;
+  /**
+   * Expected wait to board, minutes: half the typical weekday daytime headway of the trains that run the
+   * whole leg (this route plus alsoRoutes, combined). 0 when network.json has no headways.
+   */
+  waitMinutes: number;
   fromPlatform: string;
   toPlatform: string;
   /**
@@ -47,7 +58,12 @@ export type RouteFailReason = 'origin-not-step-free' | 'destination-not-step-fre
 
 export type RouteOk = {
   ok: true;
+  /** Total trip minutes, platform to platform: rideMinutes + waitMinutes. */
   minutes: number;
+  /** Expected waiting for trains: sum of the ride legs' waitMinutes (first boarding and after each transfer). */
+  waitMinutes: number;
+  /** Everything except waiting: time on trains plus in-station transfers (minutes - waitMinutes). */
+  rideMinutes: number;
   legs: Leg[];
   transfers: number;
   /** true when some station on the trip has no pathway data and its GTFS flag was used instead. */
@@ -476,6 +492,39 @@ export function stationStatus(data: StaticData, stationId: string, closed: Reado
   return { stepFree, partial, approximate, platforms, blockedBy: [...blockedBy].sort(), blockedPlatforms };
 }
 
+export type StationEntrance = { id: string; name: string; stepFree: boolean; lat: number; lon: number };
+
+/**
+ * Every street door of a station with a cleaned name, and whether it is step-free right now: a door a
+ * wheelchair user can use (see stepFreeEntrances) from which some platform is reachable without stairs or
+ * escalators, with the closed facilities removed (and not a platform whose mini-high platform is closed).
+ * Surface stops list their synthetic street-level door, flagged by the station's own GTFS flag.
+ * Doors without coordinates are left out. Sorted step-free first, then by name.
+ */
+export function stationEntrances(data: StaticData, stationId: string, closed: ReadonlySet<string> = EMPTY): StationEntrance[] {
+  const idx = index(data);
+  const st = idx.stationById.get(stationId);
+  const sp = st ? data.pathways[st.id] : undefined;
+  if (!st || !sp) return [];
+  const ok = new Set(stepFreeEntrances(sp, st));
+  const plats = platformsOf(data, st.id).filter((p) => hasOwn(sp.nodes, p) && !boardingBlocked(idx, p, closed));
+  const out: StationEntrance[] = [];
+  for (const id of entranceNodes(sp, st)) {
+    const n = sp.nodes[id];
+    if (!n || typeof n.lat !== 'number' || typeof n.lon !== 'number') continue;
+    const stepFree = ok.has(id) && plats.length > 0 && reachable(sp, [id], plats, closed);
+    out.push({ id, name: cleanEntranceName(n.name, st.name, 'entrance'), stepFree, lat: n.lat, lon: n.lon });
+  }
+  // Same street, several doors (Park Street has four "Tremont St" doors): add the MBTA door number.
+  const count = new Map<string, number>();
+  for (const e of out) count.set(e.name, (count.get(e.name) ?? 0) + 1);
+  for (const e of out) {
+    const num = doorNumber(sp.nodes[e.id]?.name);
+    if ((count.get(e.name) ?? 0) > 1 && num) e.name = `${e.name} (door ${num})`;
+  }
+  return out.sort((a, b) => Number(b.stepFree) - Number(a.stepFree) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
+}
+
 // ---------------------------------------------------------------- geography
 
 export function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
@@ -580,17 +629,30 @@ function legService(data: StaticData, leg: RideLeg, directionId: 0 | 1): { alsoR
   return { alsoRoutes, ...(terminals.size ? { towards: [...terminals].sort().join('/') } : {}) };
 }
 
-function nodeName(data: StaticData, stationId: string, nodeId: string | null): string | undefined {
+/** Cleaned display name of a door node ("Boston Common elevator entrance"), when the GTFS data names it. */
+function nodeName(data: StaticData, station: Station, nodeId: string | null, kind: 'entrance' | 'exit'): string | undefined {
   if (!nodeId) return undefined;
-  const n = data.pathways[stationId]?.nodes?.[nodeId]?.name;
-  return n ? n : undefined;
+  const n = data.pathways[station.id]?.nodes?.[nodeId]?.name;
+  return n && n.trim() ? cleanEntranceName(n, station.name, kind) : undefined;
 }
 
-function entrancePoint(data: StaticData, station: Station, nodeId: string | null): EntrancePoint | undefined {
+function entrancePoint(data: StaticData, station: Station, nodeId: string | null, kind: 'entrance' | 'exit'): EntrancePoint | undefined {
   if (!nodeId) return undefined;
   const n = data.pathways[station.id]?.nodes?.[nodeId];
   if (!n || typeof n.lat !== 'number' || typeof n.lon !== 'number') return undefined;
-  return { id: nodeId, name: n.name || station.name, lat: n.lat, lon: n.lon };
+  return { id: nodeId, name: cleanEntranceName(n.name, station.name, kind), lat: n.lat, lon: n.lon };
+}
+
+/** Expected wait (minutes) for any of `routes` in direction `dir`: half their combined headway; 0 without headway data. */
+function expectedWait(data: StaticData, routes: RouteId[], dir: 0 | 1): number {
+  const hw = data.network.headways;
+  if (!hw) return 0;
+  let freq = 0; // trains per minute
+  for (const r of routes) {
+    const h = hw[r]?.[dir];
+    if (typeof h === 'number' && Number.isFinite(h) && h > 0) freq += 1 / h;
+  }
+  return freq > 0 ? 0.5 / freq : 0;
 }
 
 // ---------------------------------------------------------------- trip planner
@@ -598,7 +660,7 @@ function entrancePoint(data: StaticData, station: Station, nodeId: string | null
 type TransferInfo = { minutes: number; facilityIds: string[]; approximate: boolean } | null;
 
 type Step =
-  | { kind: 'ride'; prev: string; edge: RideEdge; switchPenalty: number }
+  | { kind: 'ride'; prev: string; edge: RideEdge; switchPenalty: number; wait: number }
   | { kind: 'transfer'; prev: string; from: string; to: string; stationId: string; minutes: number };
 
 const round1 = (x: number) => Math.round(x * 10) / 10;
@@ -622,6 +684,8 @@ export function planStepFree(
     return {
       ok: true,
       minutes: 0,
+      waitMinutes: 0,
+      rideMinutes: 0,
       legs: [],
       transfers: 0,
       approximate: s.approximate,
@@ -664,7 +728,10 @@ export function planStepFree(
     return info;
   };
 
+  const waitFor = (route: RouteId, dir: 0 | 1) => expectedWait(data, [route], dir);
+
   // Dijkstra over (platform, route on board). route '' = not on a train (start, or just changed platform).
+  // Cost = ride minutes + transfers + the expected wait at each boarding (half the route's headway).
   const SEP = '\u0000';
   const key = (p: string, r: string) => `${p}${SEP}${r}`;
   const dist = new Map<string, number>();
@@ -695,7 +762,15 @@ export function planStepFree(
     }
     for (const e of idx.ridesFrom.get(p) ?? []) {
       const penalty = r !== '' && r !== e.route ? MIN_TRANSFER_MIN : 0;
-      relax(key(e.to, e.route), cost + Math.max(0, e.minutes) + penalty, { kind: 'ride', prev: sk, edge: e, switchPenalty: penalty });
+      // Boarding (first train, after a platform change, or a same-platform change of route) waits half a headway.
+      const wait = r !== e.route ? waitFor(e.route, e.directionId) : 0;
+      relax(key(e.to, e.route), cost + Math.max(0, e.minutes) + penalty + wait, {
+        kind: 'ride',
+        prev: sk,
+        edge: e,
+        switchPenalty: penalty,
+        wait,
+      });
     }
     if (r !== '') {
       const plat = data.network.platforms[p];
@@ -765,6 +840,7 @@ export function planStepFree(
         toStation: toSt,
         stationIds: fromSt === toSt ? [fromSt] : [fromSt, toSt],
         minutes: Math.max(0, e.minutes),
+        waitMinutes: s.wait,
         fromPlatform: e.from,
         toPlatform: e.to,
       };
@@ -782,14 +858,25 @@ export function planStepFree(
     const towards = svc.towards ?? towardsOf(data, l.route, dir, l.toPlatform);
     if (towards) l.towards = towards;
     if (svc.alsoRoutes.length) l.alsoRoutes = svc.alsoRoutes;
+    // Any train that runs the whole leg will do (e.g. B, C or D on the Green trunk), so the wait is half
+    // their combined headway.
+    l.waitMinutes = round1(expectedWait(data, [l.route, ...svc.alsoRoutes], dir));
   }
   for (const f of da.outPath?.facilityIds ?? []) used.add(f);
 
+  // Moving time (rides and transfers) is the Dijkstra cost without the planning waits; the reported waits
+  // are the per-leg ones above.
+  const plannedWait = steps.reduce((n, s) => n + (s.kind === 'ride' ? s.wait : 0), 0);
+  const moving = Math.max(0, dist.get(goal)! - plannedWait);
+  const waitMinutes = round1(legs.reduce((n, l) => n + (l.kind === 'ride' ? l.waitMinutes : 0), 0));
+  const minutes = round1(moving + waitMinutes);
   const originEntranceId = oa.inPath?.from ?? null;
   const destinationExitId = da.outPath?.to ?? null;
   const out: RouteOk = {
     ok: true,
-    minutes: round1(dist.get(goal)!),
+    minutes,
+    waitMinutes,
+    rideMinutes: round1(minutes - waitMinutes),
     legs,
     transfers: legs.filter((l) => l.kind === 'transfer').length,
     approximate,
@@ -797,12 +884,12 @@ export function planStepFree(
     originEntranceId,
     destinationExitId,
   };
-  const oName = nodeName(data, o.id, originEntranceId);
-  const dName = nodeName(data, d.id, destinationExitId);
+  const oName = nodeName(data, o, originEntranceId, 'entrance');
+  const dName = nodeName(data, d, destinationExitId, 'exit');
   if (oName) out.originEntranceName = oName;
   if (dName) out.destinationExitName = dName;
-  const oPoint = entrancePoint(data, o, originEntranceId);
-  const dPoint = entrancePoint(data, d, destinationExitId);
+  const oPoint = entrancePoint(data, o, originEntranceId, 'entrance');
+  const dPoint = entrancePoint(data, d, destinationExitId, 'exit');
   if (oPoint) out.originEntrance = oPoint;
   if (dPoint) out.destinationExit = dPoint;
   return out;

@@ -13,6 +13,7 @@ import {
   type Station,
   type StationDetailData,
   type StationsStatusData,
+  type Vehicle,
 } from './api';
 import { walkUrl, type LatLon, type WalkResult } from './walk';
 
@@ -100,6 +101,20 @@ export function useCrashLocations(q: string, sort: 'recorded' | 'model') {
     ...STATIC,
     keepPreviousData: true,
   });
+}
+
+/** Live trains for the map: every 15 s, paused while the tab is hidden; only fetched while the layer is on. */
+export function useVehicles(enabled: boolean) {
+  return useSWR<ApiEnvelope<Vehicle[]>>(enabled ? '/api/vehicles' : null, fetchJson, {
+    ...LIVE,
+    refreshInterval: 15_000,
+    errorRetryCount: 2,
+  });
+}
+
+/** A static file under /data, fetched once and only after its layer is first turned on. */
+export function useStaticFile<T>(url: string, enabled: boolean) {
+  return useSWR<T>(enabled ? url : null, fetchJson, STATIC);
 }
 
 /** Local fallback for the crash list: read the static layer directly. */

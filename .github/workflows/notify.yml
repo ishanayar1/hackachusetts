@@ -1,0 +1,40 @@
+# LastMile phone alerts: every 10 minutes, ask the deployed app to publish new accessibility alerts
+# (elevator/escalator closures, access issues, subplatform/lift closures) to per-station ntfy.sh topics
+# ("lastmile-" + station id, e.g. https://ntfy.sh/lastmile-place-dwnxg). See src/lib/notify.ts.
+#
+# Required repository secrets (Settings > Secrets and variables > Actions):
+#   LASTMILE_URL   Base URL of the deployed app, no trailing slash, e.g. https://lastmile.example.com
+#   NOTIFY_SECRET  Same value as the NOTIFY_SECRET env var set on the deployed app
+#                  (the endpoint rejects calls without it when the app has it set).
+# If LASTMILE_URL is not set the job skips instead of failing.
+#
+# GitHub may start scheduled runs a few minutes late; the app looks back 11 minutes per run.
+
+name: Notify riders
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: notify
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: POST /api/notify/run
+        env:
+          LASTMILE_URL: ${{ secrets.LASTMILE_URL }}
+          NOTIFY_SECRET: ${{ secrets.NOTIFY_SECRET }}
+        run: |
+          if [ -z "$LASTMILE_URL" ]; then
+            echo "LASTMILE_URL secret not set - skipping."
+            exit 0
+          fi
+          curl --fail-with-body -sS --max-time 90 -X POST \
+            -H "x-notify-secret: $NOTIFY_SECRET" \
+            "${LASTMILE_URL%/}/api/notify/run"

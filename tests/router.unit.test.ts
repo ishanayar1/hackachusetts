@@ -11,6 +11,7 @@ import {
   nearestStepFree,
   haversineKm,
   towardsOf,
+  stationEntrances,
   type StaticData,
   type RideLeg,
 } from '@/lib/router';
@@ -295,9 +296,78 @@ describe('towards and entrance names', () => {
     const r = planStepFree(data, { from: 'O', to: 'D' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.originEntranceName).toBe('Main St (Elevator)');
+    expect(r.originEntranceName).toBe('Main St elevator entrance'); // cleaned from 'Main St (Elevator)'
     expect(r.destinationExitName).toBeUndefined(); // D-door has no name
     expect('destinationExitName' in r).toBe(false);
+  });
+});
+
+describe('expected waits from headways', () => {
+  const withHeadways = (hw: StaticData['network']['headways']) => {
+    const data = build(LINES);
+    return { ...data, network: { ...data.network, headways: hw } } satisfies StaticData;
+  };
+
+  it('no headway data: waits are 0 and minutes are unchanged', () => {
+    const r = planStepFree(build(LINES), { from: 'O', to: 'D' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r).toMatchObject({ minutes: 6, waitMinutes: 0, rideMinutes: 6 });
+    for (const l of r.legs) if (l.kind === 'ride') expect(l.waitMinutes).toBe(0);
+  });
+
+  it('adds half a headway at the first boarding and after each transfer', () => {
+    const data = withHeadways({ Red: { 0: 6, 1: 6 }, Orange: { 0: 8, 1: 8 }, Blue: { 0: 8, 1: 8 } });
+    const r = planStepFree(data, { from: 'O', to: 'D' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Red 2 min + transfer 2 + Orange 2 = 6 moving; waits 3 (Red) + 4 (Orange)
+    expect(r.legs.map((l) => (l.kind === 'ride' ? `${l.route}:${l.waitMinutes}` : 'transfer'))).toEqual(['Red:3', 'transfer', 'Orange:4']);
+    expect(r).toMatchObject({ minutes: 13, waitMinutes: 7, rideMinutes: 6 });
+    // A one-seat ride waits once.
+    const one = planStepFree(data, { from: 'O', to: 'X' });
+    expect(one.ok && [one.minutes, one.waitMinutes, one.rideMinutes]).toEqual([9, 3, 6]);
+  });
+
+  it('a long wait for a connecting line changes the chosen route', () => {
+    // Via Orange: 6 moving + 3 + 6 = 15. Via Blue: Red 4 + transfer 2 + Blue 3 = 9 moving + 3 + 2 = 14.
+    const data = withHeadways({ Red: { 0: 6, 1: 6 }, Orange: { 0: 12, 1: 12 }, Blue: { 0: 4, 1: 4 } });
+    const r = planStepFree(data, { from: 'O', to: 'D' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect((r.legs[2] as RideLeg).route).toBe('Blue');
+    expect(r).toMatchObject({ minutes: 14, waitMinutes: 5, rideMinutes: 9 });
+  });
+
+  it('a route missing from headways waits 0', () => {
+    const r = planStepFree(withHeadways({ Red: { 0: 6, 1: 6 } }), { from: 'O', to: 'D' });
+    expect(r.ok && r.legs.map((l) => (l.kind === 'ride' ? l.waitMinutes : null))).toEqual([3, null, 0]);
+  });
+});
+
+describe('stationEntrances', () => {
+  const withDoor = () => {
+    const data = build(LINES);
+    Object.assign(data.pathways.O.nodes['O-door'], { name: '1 | Main St (Elevator)', lat: 42.3501, lon: -71.0601 });
+    return data;
+  };
+
+  it('lists doors with cleaned names and step-free status', () => {
+    expect(stationEntrances(withDoor(), 'O')).toEqual([
+      { id: 'O-door', name: 'Main St elevator entrance', stepFree: true, lat: 42.3501, lon: -71.0601 },
+    ]);
+  });
+
+  it('a closed elevator, or a door flagged not accessible, is not step-free', () => {
+    expect(stationEntrances(withDoor(), 'O', new Set(['EL-O-Red']))[0].stepFree).toBe(false);
+    const flagged = withDoor();
+    flagged.pathways.O.nodes['O-door'].wheelchair = 2;
+    expect(stationEntrances(flagged, 'O')[0].stepFree).toBe(false);
+  });
+
+  it('doors without coordinates and unknown stations give nothing', () => {
+    expect(stationEntrances(build(LINES), 'O')).toEqual([]);
+    expect(stationEntrances(withDoor(), 'nope')).toEqual([]);
   });
 });
 
@@ -369,8 +439,8 @@ describe('mini-high platforms, partial status, elevator doors', () => {
     const r = planStepFree(data, { from: 'O', to: 'D' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.originEntrance).toEqual({ id: 'O-door', name: 'O', lat: 42.3501, lon: -71.0601 });
-    expect(r.destinationExit).toEqual({ id: 'D-door', name: 'Main St', lat: 42.3581, lon: -71.0501 });
+    expect(r.originEntrance).toEqual({ id: 'O-door', name: 'O entrance', lat: 42.3501, lon: -71.0601 });
+    expect(r.destinationExit).toEqual({ id: 'D-door', name: 'Main St exit', lat: 42.3581, lon: -71.0501 });
     const noCoords = planStepFree(build(LINES), { from: 'O', to: 'D' });
     expect(noCoords.ok && 'originEntrance' in noCoords).toBe(false);
   });
@@ -541,6 +611,36 @@ describe.skipIf(!haveReal)('real MBTA data', () => {
       const red = north.legs.find((l): l is RideLeg => l.kind === 'ride' && l.route === 'Red');
       expect(red?.towards).toBe('Alewife');
     }
+  });
+
+  it('real headways: Park Street to Kenmore waits half the combined B/C/D headway, Alewife to Park half the Red one', () => {
+    const hw = data.network.headways!;
+    const r = planStepFree(data, { from: 'place-pktrm', to: 'place-kencl' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const leg = r.legs.find((l): l is RideLeg => l.kind === 'ride')!;
+    const freq = [leg.route, ...(leg.alsoRoutes ?? [])].reduce((n, rt) => n + 1 / hw[rt]![0], 0);
+    expect(leg.waitMinutes).toBeCloseTo(0.5 / freq, 1);
+    expect(leg.waitMinutes).toBeLessThan(hw[leg.route]![0] / 2);
+    expect(r.waitMinutes).toBe(leg.waitMinutes);
+    expect(r.minutes).toBeCloseTo(r.rideMinutes + r.waitMinutes, 5);
+    const red = planStepFree(data, { from: 'place-alfcl', to: 'place-pktrm' });
+    expect(red.ok && red.waitMinutes).toBe(Math.round((hw.Red![0] / 2) * 10) / 10);
+  });
+
+  it('real doors: Park Street and Downtown Crossing have step-free and not step-free doors', () => {
+    const pk = stationEntrances(data, 'place-pktrm');
+    expect(pk.find((e) => e.id === 'door-pktrm-elevatorwb')).toMatchObject({ name: 'Boston Common elevator entrance', stepFree: true });
+    expect(pk.some((e) => !e.stepFree)).toBe(true);
+    // Four raw "N | Tremont St" doors stay distinct through their MBTA door number.
+    expect(pk.find((e) => e.id === 'door-pktrm-winter')?.name).toBe('Tremont St entrance (door 3)');
+    expect(new Set(pk.map((e) => e.name)).size).toBe(pk.length);
+    const dx = stationEntrances(data, 'place-dwnxg');
+    expect(new Set(dx.map((e) => e.name)).size).toBe(dx.length);
+    expect(dx.find((e) => e.id === 'door-dwnxg-franklinelev')).toMatchObject({ name: 'Franklin St elevator entrance', stepFree: true });
+    expect(dx.find((e) => e.id === 'door-dwnxg-hawley')).toMatchObject({ name: 'Hawley St escalator entrance', stepFree: false });
+    const allElevators = new Set((data.facilities ?? []).filter((f) => f.stationId === 'place-dwnxg' && f.type === 'ELEVATOR').map((f) => f.id));
+    expect(stationEntrances(data, 'place-dwnxg', allElevators).some((e) => e.stepFree)).toBe(false);
   });
 
   it('closing every facility at Downtown Crossing never yields a route that uses one', () => {

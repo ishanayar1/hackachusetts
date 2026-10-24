@@ -21,6 +21,7 @@ import {
   type StationPathways,
   type Wheelchair,
 } from '../src/lib/mbta/types';
+import type { Headways } from '../src/lib/router';
 
 const ROOT = path.resolve(__dirname, '..');
 const RAW_DIR = path.join(ROOT, 'data', 'raw');
@@ -106,6 +107,7 @@ async function main() {
     'facilities_properties.txt',
     'shapes.txt',
     'calendar.txt',
+    'calendar_dates.txt',
   ];
   const files = unzipSync(zipBuf, { filter: (f) => want.includes(f.name) });
   const text = (name: string) => {
@@ -151,10 +153,43 @@ async function main() {
   const fallbackTrips = new Set<string>();
   const fallbackCount = new Map<string, number>();
 
+  // Headways come from one real weekday: the first Wednesday on or after today (else the feed's first)
+  // with no calendar_dates exceptions, using the services that run on that date only (the feed has
+  // overlapping weekday calendars, so pooling every Wednesday service would double-count trains).
+  const calRows = csv(text('calendar.txt'));
+  const calDates = files['calendar_dates.txt'] ? csv(text('calendar_dates.txt')) : [];
+  const exceptionDates = new Set(calDates.map((c) => c.date));
+  const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '');
+  const feedStart = calRows.reduce((m, c) => (c.start_date < m ? c.start_date : m), '99999999');
+  const feedEnd = calRows.reduce((m, c) => (c.end_date > m ? c.end_date : m), '00000000');
+  const wednesdays: string[] = [];
+  for (
+    let d = new Date(Date.UTC(+feedStart.slice(0, 4), +feedStart.slice(4, 6) - 1, +feedStart.slice(6, 8)));
+    ymd(d) <= feedEnd;
+    d = new Date(d.getTime() + 86400000)
+  ) {
+    if (d.getUTCDay() === 3 && !exceptionDates.has(ymd(d))) wednesdays.push(ymd(d));
+  }
+  const today = ymd(new Date());
+  const serviceDate = wednesdays.find((w) => w >= today) ?? wednesdays[0] ?? '';
+  const dayServices = new Set(
+    calRows.filter((c) => c.wednesday === '1' && c.start_date <= serviceDate && serviceDate <= c.end_date).map((c) => c.service_id),
+  );
+  for (const c of calDates) {
+    if (c.date !== serviceDate) continue;
+    if (c.exception_type === '1') dayServices.add(c.service_id);
+    if (c.exception_type === '2') dayServices.delete(c.service_id);
+  }
+  /** Every real trip (any pattern) that runs on serviceDate: route and direction. */
+  const dayTrips = new Map<string, { route: RouteId; dir: 0 | 1 }>();
+
   const tripShape = new Map<string, string>();
   const tripRoute = new Map<string, string>();
   for (const t of csvFiltered(text('trips.txt'), new Set(SUBWAY))) {
     if (repTrips.has(t.trip_id)) tripShape.set(t.trip_id, t.shape_id);
+    if (dayServices.has(t.service_id) && !t.trip_id.startsWith('canonical-') && SUBWAY.has(t.route_id)) {
+      dayTrips.set(t.trip_id, { route: t.route_id as RouteId, dir: t.direction_id === '1' ? 1 : 0 });
+    }
     if (canonicalIds.has(t.route_pattern_id) && !t.trip_id.startsWith('canonical-')) {
       tripRoute.set(t.trip_id, t.route_id);
       if (weekday.has(t.service_id)) weekdayTrips.add(t.trip_id);
@@ -171,13 +206,56 @@ async function main() {
   // stop_times is ~130 MB: scan lines and parse only the representative and sampled trips.
   const tripStops = new Map<string, { stop: string; seq: number; t: number | null }[]>();
   // stop_times has trip_id first, so filter on it directly.
-  for (const st of csvFiltered(text('stop_times.txt'), new Set([...repTrips, ...sampleTrips]))) {
+  for (const st of csvFiltered(text('stop_times.txt'), new Set([...repTrips, ...sampleTrips, ...dayTrips.keys()]))) {
     const time = st.departure_time || st.arrival_time;
     const list = tripStops.get(st.trip_id) ?? [];
     list.push({ stop: st.stop_id, seq: Number(st.stop_sequence), t: time ? secs(time) : null });
     tripStops.set(st.trip_id, list);
   }
   for (const list of tripStops.values()) list.sort((a, b) => a.seq - b.seq);
+
+  // ---------- headways ----------
+  // Typical weekday daytime headway per route and direction: the median gap between consecutive
+  // scheduled departures, 07:00-19:00 on serviceDate, at a central station of the route (the station on
+  // the most canonical patterns, nearest the middle of the longest one: the trunk for Red and Green).
+  const median = (arr: number[]): number | null => {
+    if (!arr.length) return null;
+    const s = [...arr].sort((x, y) => x - y);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
+  const headways: Headways = {};
+  const headwayLog: string[] = [];
+  for (const route of SUBWAY_ROUTES) {
+    const hw: Partial<Record<0 | 1, number>> = {};
+    for (const dir of [0, 1] as const) {
+      const seqs = canonical
+        .filter((p) => p.route_id === route && (p.direction_id === '1' ? 1 : 0) === dir)
+        .map((p) => (tripStops.get(p.representative_trip_id) ?? []).map((s) => stationOf(s.stop)).filter((s): s is string => !!s));
+      if (!seqs.length) continue;
+      const longest = seqs.reduce((a, b) => (b.length > a.length ? b : a));
+      const count = (sid: string) => seqs.filter((q) => q.includes(sid)).length;
+      const best = Math.max(...longest.map(count));
+      const shared = longest.map((sid, i) => ({ sid, i })).filter((x) => count(x.sid) === best);
+      const central = shared[Math.floor(shared.length / 2)].sid;
+      const deps: number[] = [];
+      for (const [id, t] of dayTrips) {
+        if (t.route !== route || t.dir !== dir) continue;
+        const at = (tripStops.get(id) ?? []).find((s) => stationOf(s.stop) === central && s.t !== null);
+        if (at && at.t! >= 7 * 3600 && at.t! <= 19 * 3600) deps.push(at.t!);
+      }
+      deps.sort((a, b) => a - b);
+      const gaps = deps.slice(1).map((t, i) => (t - deps[i]) / 60).filter((g) => g > 0);
+      const m = median(gaps);
+      if (m !== null) hw[dir] = Math.round(m * 10) / 10;
+      headwayLog.push(`${route}/${dir} @${stops.get(central)?.stop_name}: ${deps.length} deps, ${m ?? '-'} min`);
+    }
+    const h0 = hw[0] ?? hw[1];
+    const h1 = hw[1] ?? hw[0];
+    if (h0 !== undefined && h1 !== undefined) headways[route] = { 0: h0, 1: h1 };
+  }
+  console.log(`Headways from ${dayTrips.size} trips on ${serviceDate} (${[...dayServices].length} services)`);
+  for (const l of headwayLog) console.log(`  ${l}`);
 
   // Median scheduled minutes between consecutive platforms, from the real sampled trips.
   const pairSamples = new Map<string, number[]>();
@@ -271,7 +349,7 @@ async function main() {
     if (!sid || !stationRoutes.has(sid)) continue;
     for (const r of stationRoutes.get(sid)!) if (routes.get(r)?.route_type === s.vehicle_type) addPlatform(s.stop_id, r);
   }
-  const network: Network = { platforms, rides };
+  const network: Network & { headways: Headways } = { platforms, rides, headways };
   const subwayStations = new Set(stationRoutes.keys());
 
   // ---------- facilities ----------

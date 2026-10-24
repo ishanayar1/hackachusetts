@@ -15,7 +15,7 @@ Hackachusetts · Saturday, Oct 24, 2026 · Civic Action track (V3: safer, connec
 - Live public data plus a 20-second demo moment: pick a station, press **"break this elevator"**, watch the route recalculate, see which door to use and the ramp and crash warnings on the walk.
 - Real Kiro work (judging: implementation): an MBTA MCP server, specs, property-based tests ("never route through a closed elevator"), steering docs and hooks, including an accessibility checker hook.
 
-**Stack:** TypeScript, React + Next.js (App Router) as an installable mobile web app (PWA), Tailwind and shadcn/ui, MapLibre (via react-map-gl) with OpenFreeMap tiles (no key), a shared server-side cache in front of every MBTA call (Next.js `fetch` revalidation, or a KV store; see Resilience), hosted on Vercel with a Docker image for local runs, built in Kiro. Full details are in `docs/tech-stack.md`.
+**Stack:** TypeScript, React + Next.js (App Router) as an installable mobile web app (PWA), Tailwind and shadcn/ui, MapLibre (via react-map-gl) with OpenFreeMap tiles (no key), a shared server-side cache in front of every MBTA call (Next.js `fetch` revalidation, or a KV store; see Resilience), hosted on Vercel, with a Docker image (Next.js standalone output) for local runs and self-hosting, built in Kiro. Full details are in `docs/tech-stack.md`.
 
 ### Before 11:30 (if you are past this, do it now)
 - [ ] Get the free **MBTA V3 API key** at api-v3.mbta.com. Without it the whole venue shares 20 requests a minute.
@@ -77,8 +77,22 @@ Every source below was called live unless marked otherwise. "Free key" means sig
 | S5 | **Plain-language alert text** | Our LLM key | Optional |
 | S6 | **Live train map** | MBTA `/vehicles` | ✅ 79 trains. Decoration for this audience, so it is last |
 
-### Not building today
-Fatal crash markers, resident-reported danger spots, weather on the walk, Bluebikes, the equity view, translation, a crash "prediction" model. Mention them as future work, nothing more.
+### Also building
+The team decided to build all of these, after the Musts work:
+- **Crash heatmap and crash model:** recorded crashes as a heatmap; the team model is shown only as "next-month estimate (team model)", never as a prediction or "risk".
+- **Fatal crash markers** (recorded fatal crashes).
+- **Resident-reported danger spots** (labelled as resident reports).
+- **Weather on the walk.**
+- **Bluebikes.**
+- **Translation.**
+- **Equity view.**
+- **Live train layer** (MBTA `/vehicles`, S6).
+- **Alerts outside the app:** email, phone push through ntfy.sh and browser push for "My stations". In-app alerts stay the fallback if any of these fail.
+- **Plain-language alert text** from our LLM key (S5). The MBTA's own English alert text stays the fallback.
+- **End-at-location walks:** a trip can end at a place, not only a station, with a walking leg at the end.
+- **Home-screen icons:** PNG icons for the PWA manifest (`/icons/192`, `/icons/512`, maskable variants) and the Apple touch icon, drawn with `next/og`.
+
+Same rules for all of them: crash data is "recorded crashes", never say "safe", every status has text or an icon, and everything on the map also appears as text in the panel.
 
 **Scope:** subway only (Red, Orange, Blue, Green B/C/D/E, Mattapan). The Silver Line is filed as a bus route in the API, so it's out. Commuter rail and buses are out.
 
@@ -221,11 +235,11 @@ Paste the full brief into your AI agent before it writes code. The same content 
 4. API keys only in environment variables. Never in client code or the public repo.
 5. Scope is the subway: Red, Orange, Blue, Green-B/C/D/E, Mattapan.
 6. Static data (stations, paths, elevators, routes, shapes) comes from GTFS at build time, not the live API.
-7. Crash data is historical. Call it "recorded crashes". Never call it a prediction, "risk" or "AI".
+7. Crash data is historical. Call it "recorded crashes". The team crash model is in scope, but show its output only as "next-month estimate (team model)"; never call it a prediction, "risk" or "AI".
 8. The router must never use a closed elevator, ramp or lift. Write a property-based test for it.
 9. Walking routes come from the public Valhalla server (`valhalla1.openstreetmap.de`, no key). It's a shared service: cache every route on our server, pre-compute demo routes, and fall back to OSRM foot routing, then a straight line.
 10. Every screen must work without the map. Every status needs an icon or text, never color alone. Run the accessibility checker before you say a UI task is done.
 11. Never say a route or place is "safe". Say what the data shows and when it was recorded.
-12. Do not build anything in "Not building today".
+12. Everything in "Also building" is in scope once the Musts work. It follows the same rules: "recorded crashes", the model only as "next-month estimate (team model)", never "safe", and every map layer also shown as text in the panel.
 13. Next.js App Router only. Secrets stay in route handlers and `src/lib/server/` files marked `import 'server-only'`; never use `NEXT_PUBLIC_` for keys. The map component is `'use client'` and loaded with `next/dynamic` and `ssr: false`.
 14. Parking data has no live occupancy. Show capacity, accessible spaces, fees and parking alerts, never "spots available now."
