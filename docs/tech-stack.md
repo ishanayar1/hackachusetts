@@ -27,7 +27,39 @@ OpenStreetMap (street info)  →  OpenFreeMap (sends map pieces)  →  MapLibre 
 
 We don't use OpenStreetMap's own map servers directly: they're for light use only, so a busy app can get blocked. Google Maps and Mapbox need billing or keys.
 
+There's a fourth piece we use for *names*, not pictures: **Nominatim = the address book.** OpenFreeMap sends map pictures but can't tell you "what street is at this point." Nominatim is OpenStreetMap's free geocoder that turns a latitude/longitude into a human name like "Blue Hill Avenue, Roxbury." It's free with no key, but rate-limited (about 1 request per second, and it wants a `User-Agent` that identifies the app), so we call it **once, offline, in a build script and cache the results** rather than from the browser.
+
+```
+OpenStreetMap (street info)  →  OpenFreeMap (map pictures)   →  MapLibre (draws the map)
+                             →  Nominatim    (point → name)  →  cached into our data
+```
+
 **Backup:** OpenFreeMap is a free community service, so if it fails to load we switch one line to a backup style built on OpenStreetMap's standard image tiles. The map still shows streets, just less polished. Show "© OpenStreetMap contributors" on the map; the license requires it.
+
+## Crash-risk app: the map stack in practice (`app/`)
+
+The crash-risk prediction app in `app/` is a working reference for the map
+stack above. It's a standalone Python + vanilla-JS app (not Next.js), but the
+map pieces are identical, so it's a good proof that this stack works with no
+keys.
+
+- **Basemap:** MapLibre GL JS loads the OpenFreeMap "liberty" vector style
+  (`tiles.openfreemap.org/styles/liberty`). No key, no `.env`.
+- **Our data on top:** the predicted crash risk per area is drawn as a GeoJSON
+  **`<Source>` + fill/line layers** of H3 hexagons, colored by risk — exactly the
+  "GeoJSON layers, not hundreds of markers" rule. A toggle shows/hides the hexagon
+  overlay while the OpenFreeMap basemap stays visible.
+- **Names:** each hexagon's center is reverse-geocoded with **OSM Nominatim** into
+  a street + neighborhood label (e.g. "Blue Hill Avenue, Roxbury"), run once in
+  `predict.py` and cached to `geocache.json` so the live app makes zero geocoding
+  calls. The labels power the searchable location list and the map popups.
+- **Risk layers are inserted below the basemap's label layers**, so OpenFreeMap's
+  own street and place names always stay readable on top of our colors.
+
+Takeaway for LastMile: the same OpenFreeMap + MapLibre + Nominatim combination
+covers both the basemap and human-readable place names with no billing, keys, or
+accounts. For LastMile we use the React wrapper (`react-map-gl/maplibre`) instead
+of raw MapLibre, and ship risk as 250 m grid cells rather than hexagons.
 
 ## The stack
 
