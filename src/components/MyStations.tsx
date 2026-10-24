@@ -5,6 +5,7 @@ import { ACCESS_EFFECTS, alertActive, effectLabel, partialLines, stepFreeState }
 import { authClient } from '@/lib/ui/auth-client';
 import { useAlerts, useFacilities } from '@/lib/ui/hooks';
 import { StarButton, StateText } from './ui';
+import { useT } from '@/lib/i18n';
 
 export default function MyStations({
   ids,
@@ -27,16 +28,17 @@ export default function MyStations({
   );
   const facilityName = (id: string) => facilities.get(id)?.shortName ?? facilities.get(id)?.name ?? id;
   const saved = ids.map((id) => byId.get(id)).filter((s): s is Station => !!s);
+  const t = useT();
 
   return (
     <section aria-labelledby="mine-h" className="rounded-md border border-slate-400 bg-white p-3">
       <h2 id="mine-h" className="text-lg font-bold text-slate-900">
-        <span aria-hidden="true">★ </span>My stations
+        <span aria-hidden="true">★ </span>{t('My stations')}
       </h2>
       {saved.length === 0 ? (
         <p className="mt-1 text-sm text-slate-800">
-          No saved stations yet. Open a station and choose Save to see it here.
-          {!session && ' Sign in to keep them on every device.'}
+          {t('No saved stations yet. Open a station and choose Save to see it here.')}
+          {!session && ` ${t('Sign in to keep them on every device.')}`}
         </p>
       ) : (
         <ul className="mt-2 space-y-2">
@@ -59,7 +61,7 @@ export default function MyStations({
                 <StateText state={state} />
                 {state === 'no' && row && row.blockedBy.length > 0 && (
                   <p className="text-slate-800">
-                    Out of service: {row.blockedBy.map(facilityName).join('; ')}
+                    {t('Out of service: {list}', { list: row.blockedBy.map(facilityName).join('; ') })}
                   </p>
                 )}
                 {state === 'partial' && row && (
@@ -75,19 +77,51 @@ export default function MyStations({
                       <li key={a.id} className="flex items-start gap-1.5">
                         <span aria-hidden="true">⚠</span>
                         <span>
-                          <strong>{effectLabel(a.effect)}:</strong> {a.shortHeader || a.header}
+                          <strong>{t(effectLabel(a.effect))}:</strong> {a.shortHeader || a.header}
                         </span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  data && <p className="text-slate-700">No active accessibility alerts.</p>
+                  data && <p className="text-slate-700">{t('No active accessibility alerts.')}</p>
                 )}
+                <PhoneAlerts stationId={s.id} />
               </li>
             );
           })}
         </ul>
       )}
+      {saved.length > 0 && (
+        <p className="mt-2 text-xs text-slate-700">
+          {t('Alerts in this app update while it is open. For alerts when it is closed, use phone alerts below each station.')}
+        </p>
+      )}
     </section>
+  );
+}
+
+/** Phone push via ntfy.sh: the server posts new accessibility alerts for a station to topic lastmile-<stationId>. */
+function PhoneAlerts({ stationId }: { stationId: string }) {
+  const topic = `lastmile-${stationId}`;
+  const t = useT();
+  return (
+    <details className="mt-1">
+      <summary className="min-h-11 cursor-pointer py-2 font-semibold text-blue-800 underline">{t('Get phone alerts')}</summary>
+      <p>
+        {t('Topic:')} <code className="rounded bg-slate-100 px-1">{topic}</code>
+      </p>
+      <p>
+        <a
+          href={`https://ntfy.sh/${topic}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-11 items-center font-semibold text-blue-800 underline"
+        >
+          ntfy.sh/{topic}
+          <span className="sr-only"> {t('(opens in a new tab)')}</span>
+        </a>
+      </p>
+      <p>{t('Install the free ntfy app and subscribe to this topic.')}</p>
+    </details>
   );
 }

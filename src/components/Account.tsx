@@ -1,17 +1,19 @@
 'use client';
 // Header sign-in link, or who is signed in with a sign-out button.
 import Link from 'next/link';
+import { useT } from '@/lib/i18n';
 import { authClient } from '@/lib/ui/auth-client';
 import { clearMyStations } from '@/lib/ui/myStations';
 import { btn } from './ui';
 
 export default function Account() {
+  const t = useT();
   const { data: session, isPending } = authClient.useSession();
   if (isPending) return null;
   if (!session) {
     return (
       <Link href="/login" className={btn}>
-        Sign in
+        {t('Sign in')}
       </Link>
     );
   }
@@ -26,7 +28,7 @@ export default function Account() {
           clearMyStations();
         }}
       >
-        Sign out
+        {t('Sign out')}
       </button>
     </div>
   );

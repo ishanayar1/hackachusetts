@@ -4,7 +4,10 @@ import { useMemo, useState } from 'react';
 import type { NormalizedAlert, Station } from '@/lib/ui/api';
 import { ACCESS_EFFECTS, alertActive, alertDatesKnown, effectLabel, formatTime } from '@/lib/ui/format';
 import { useAlerts } from '@/lib/ui/hooks';
+import { AlertText, useAlertSummary, type PlainAlert } from './AlertSummary';
+import EquitySummary from './EquitySummary';
 import { Notice, SourceBadge } from './ui';
+import { useT } from '@/lib/i18n';
 
 function EffectIcon({ effect }: { effect: string }) {
   const common = { width: 22, height: 22, viewBox: '0 0 24 24', 'aria-hidden': true, className: 'shrink-0' } as const;
@@ -41,27 +44,31 @@ function AlertItem({
   alert,
   stationsById,
   onSelectStation,
+  summary,
 }: {
   alert: NormalizedAlert;
   stationsById: Map<string, Station>;
   onSelectStation: (id: string) => void;
+  /** Plain-language text from /api/alert-summary (accessibility alerts only). */
+  summary?: PlainAlert;
 }) {
   const period = alert.activePeriods[0];
   const datesKnown = alertDatesKnown(alert);
   const active = alertActive(alert);
   const names = alert.stationIds.map((id) => ({ id, name: stationsById.get(id)?.name })).filter((s) => s.name);
+  const t = useT();
   return (
     <li className="rounded-md border border-slate-300 bg-white p-3">
       <div className="flex items-start gap-2">
         <EffectIcon effect={alert.effect} />
         <div className="min-w-0">
           <p className="font-semibold text-slate-900">
-            {effectLabel(alert.effect)}
-            {!active && <span className="font-normal text-slate-700"> (not active right now)</span>}
+            {t(effectLabel(alert.effect))}
+            {!active && <span className="font-normal text-slate-700"> ({t('not active right now')})</span>}
           </p>
           {names.length > 0 && (
             <p className="text-sm text-slate-800">
-              {names.length === 1 ? 'Station: ' : 'Stations: '}
+              {t(names.length === 1 ? 'Station:' : 'Stations:')}{' '}
               {names.map((s, i) => (
                 <span key={s.id}>
                   {i > 0 && ', '}
@@ -76,12 +83,12 @@ function AlertItem({
               ))}
             </p>
           )}
-          <p className="mt-1 text-sm text-slate-800">{alert.shortHeader || alert.header}</p>
-          {!datesKnown && <p className="mt-1 text-xs text-slate-700">Start date not announced</p>}
+          <AlertText summary={summary} original={alert.header || alert.shortHeader} />
+          {!datesKnown && <p className="mt-1 text-xs text-slate-700">{t('Start date not announced')}</p>}
           {datesKnown && period && (
             <p className="mt-1 text-xs text-slate-700">
-              {period.start && <>Since {formatTime(period.start)}</>}
-              {period.end && <> · Until {formatTime(period.end)}</>}
+              {period.start && <>{t('Since {time}', { time: formatTime(period.start) })}</>}
+              {period.end && <> · {t('Until {time}', { time: formatTime(period.end) })}</>}
             </p>
           )}
         </div>
@@ -99,6 +106,7 @@ export default function BrokenNow({
 }) {
   const { data, error, isLoading } = useAlerts();
   const [includeEscalators, setIncludeEscalators] = useState(true);
+  const summaries = useAlertSummary();
 
   const { access, other } = useMemo(() => {
     // Informational notices (parking, amenities) are not disruptions: left out of the lists and counts.
@@ -114,7 +122,14 @@ export default function BrokenNow({
   }, [data, includeEscalators]);
 
   const elevators = access.filter((a) => a.effect === 'ELEVATOR_CLOSURE' && alertActive(a)).length;
-  const summary = data
+  const t = useT();
+  const summary = data && t.lang !== 'en'
+    ? t('Accessibility alerts: {a} (elevators out now: {e}). Other subway disruptions: {o}.', {
+        a: access.length,
+        e: elevators,
+        o: other.length,
+      })
+    : data
     ? `${access.length} accessibility ${access.length === 1 ? 'alert' : 'alerts'} (${elevators} elevator${
         elevators === 1 ? '' : 's'
       } out now), ${other.length} other subway ${other.length === 1 ? 'disruption' : 'disruptions'}.`
@@ -123,7 +138,7 @@ export default function BrokenNow({
   return (
     <section aria-labelledby="broken-h">
       <h2 id="broken-h" className="text-lg font-bold text-slate-900">
-        Broken now
+        {t('Broken now')}
       </h2>
       <label className="mt-2 flex min-h-11 items-center gap-2 text-sm text-slate-900">
         <input
@@ -132,28 +147,35 @@ export default function BrokenNow({
           checked={includeEscalators}
           onChange={(e) => setIncludeEscalators(e.target.checked)}
         />
-        Include escalators
+        {t('Include escalators')}
       </label>
       <p aria-live="polite" className="text-sm text-slate-800">
-        {isLoading ? 'Loading live alerts…' : summary}
+        {isLoading ? t('Loading live alerts…') : summary}
       </p>
       <SourceBadge source={data?.source} fetchedAt={data?.fetchedAt} />
-      {error && !data && <Notice tone="error">Live alerts are not available right now. Try again in a minute.</Notice>}
+      {error && !data && <Notice tone="error">{t('Live alerts are not available right now. Try again in a minute.')}</Notice>}
+      <EquitySummary onSelectStation={onSelectStation} />
 
       {access.length > 0 && (
         <>
-          <h3 className="mt-3 font-semibold text-slate-900">Elevators, escalators and access</h3>
+          <h3 className="mt-3 font-semibold text-slate-900">{t('Elevators, escalators and access')}</h3>
           <ul className="mt-2 space-y-2">
             {access.map((a) => (
-              <AlertItem key={a.id} alert={a} stationsById={stationsById} onSelectStation={onSelectStation} />
+              <AlertItem
+                key={a.id}
+                alert={a}
+                stationsById={stationsById}
+                onSelectStation={onSelectStation}
+                summary={summaries.get(a.id)}
+              />
             ))}
           </ul>
         </>
       )}
-      {data && access.length === 0 && <Notice>No elevator, escalator or access alerts reported right now.</Notice>}
+      {data && access.length === 0 && <Notice>{t('No elevator, escalator or access alerts reported right now.')}</Notice>}
       {other.length > 0 && (
         <>
-          <h3 className="mt-4 font-semibold text-slate-900">Other subway disruptions</h3>
+          <h3 className="mt-4 font-semibold text-slate-900">{t('Other subway disruptions')}</h3>
           <ul className="mt-2 space-y-2">
             {other.map((a) => (
               <AlertItem key={a.id} alert={a} stationsById={stationsById} onSelectStation={onSelectStation} />

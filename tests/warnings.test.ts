@@ -8,8 +8,10 @@ import {
   distanceToLineM,
   loadWarningDataFromDisk,
   walkWarnings,
+  type Fatality,
   type Hazard,
   type Ramp,
+  type SafetyConcern,
   type WarningData,
 } from '@/lib/warnings';
 
@@ -169,12 +171,51 @@ describe('walkWarnings', () => {
       rampTotal: 0,
       poorRampTotal: 0,
       lipOnlyRampTotal: 0,
+      safetyConcerns: [],
+      safetyConcernTotal: 0,
+      fatalCrashes: [],
+      fatalTotal: 0,
     };
     expect(walkWarnings(LINE, null)).toEqual(empty);
     expect(walkWarnings(LINE, {} as WarningData)).toEqual(empty);
     expect(walkWarnings([], { crashSpots: [spot('a', LAT, 1)], hazards: [hazard('h', LAT)], ramps: [] })).toEqual(empty);
     const bad = [[NaN, NaN]] as [number, number][];
     expect(walkWarnings(bad, { crashSpots: [], hazards: [hazard('h', LAT)], ramps: [] })).toEqual(empty);
+  });
+
+  it('lists resident-reported safety concerns within 40 m, nearest first, capped at 5 with a total', () => {
+    const concern = (id: string, m: number, c = 'speeding', date = '2025-05-01'): SafetyConcern => ({
+      id, date, mode: 'walking', concern: c, lat: north(m), lon: -71.065,
+    });
+    const safetyConcerns = [
+      concern('c-far', 45),
+      concern('c1', 30, 'double parking'),
+      concern('c2', 5, 'people run red lights or stop signs', '2024-01-02'),
+      concern('c3', 10), concern('c4', 15), concern('c5', 20), concern('c6', 25),
+    ];
+    const w = walkWarnings(LINE, { crashSpots: [], hazards: [], ramps: [], safetyConcerns });
+    expect(w.safetyConcernTotal).toBe(6);
+    expect(w.safetyConcerns).toHaveLength(5);
+    expect(w.safetyConcerns?.[0]).toEqual({ concern: 'people run red lights or stop signs', date: '2024-01-02' });
+    expect(w.safetyConcerns?.map((c) => c.concern)).not.toContain('double parking');
+    // No free-text or coordinates leak into the warning.
+    expect(Object.keys(w.safetyConcerns?.[0] ?? {}).sort()).toEqual(['concern', 'date']);
+  });
+
+  it('lists recorded fatal crashes within 60 m, newest first, capped at 5 with a total', () => {
+    const fatal = (id: string, m: number, date: string, mode = 'pedestrian'): Fatality => ({
+      id, date, mode, label: `Main St & ${id} St`, lat: north(m), lon: -71.065,
+    });
+    const fatalities = [
+      fatal('far', 65, '2026-01-01'),
+      fatal('a', 50, '2019-03-04', 'bicyclist'),
+      fatal('b', 0, '2025-07-09'),
+      fatal('c', 10, '2016-01-01'), fatal('d', 20, '2017-01-01'), fatal('e', 30, '2018-01-01'), fatal('f', 40, '2015-01-01'),
+    ];
+    const w = walkWarnings(LINE, { crashSpots: [], hazards: [], ramps: [], fatalities });
+    expect(w.fatalTotal).toBe(6);
+    expect(w.fatalCrashes?.map((f) => f.date)).toEqual(['2025-07-09', '2019-03-04', '2018-01-01', '2017-01-01', '2016-01-01']);
+    expect(w.fatalCrashes?.[1]).toEqual({ date: '2019-03-04', mode: 'bicyclist', label: 'Main St & a St' });
   });
 
   it('works with a single-point line', () => {
@@ -188,7 +229,7 @@ describe('loadWarningDataFromDisk', () => {
 
   it('returns empty arrays when files are missing', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'warn-empty-'));
-    expect(loadWarningDataFromDisk(dir)).toEqual({ crashSpots: [], hazards: [], ramps: [] });
+    expect(loadWarningDataFromDisk(dir)).toEqual({ crashSpots: [], hazards: [], ramps: [], fatalities: [], safetyConcerns: [] });
   });
 
   it('reads hazards, ramps and crash spots, and caches per dir', () => {
@@ -209,10 +250,21 @@ describe('loadWarningDataFromDisk', () => {
     expect(loadWarningDataFromDisk(dir)).toBe(d1);
   });
 
+  it('reads fatalities.json and safety-concerns.json', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'warn-vz-'));
+    const f: Fatality = { id: 'vzf-1', date: '2025-01-02', mode: 'pedestrian', label: 'A St & B St', lat: LAT, lon: -71.065 };
+    const c: SafetyConcern = { id: 'vzc-1', date: '2025-03-04', mode: 'walking', concern: 'speeding', lat: LAT, lon: -71.065 };
+    writeFileSync(path.join(dir, 'fatalities.json'), JSON.stringify([f]));
+    writeFileSync(path.join(dir, 'safety-concerns.json'), JSON.stringify([c]));
+    const d = loadWarningDataFromDisk(dir);
+    expect(d.fatalities).toEqual([f]);
+    expect(d.safetyConcerns).toEqual([c]);
+  });
+
   it('tolerates malformed JSON', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'warn-bad-'));
     writeFileSync(path.join(dir, 'hazards.json'), '{not json');
     writeFileSync(path.join(dir, 'ramps.json'), '{"a":1}');
-    expect(loadWarningDataFromDisk(dir)).toEqual({ crashSpots: [], hazards: [], ramps: [] });
+    expect(loadWarningDataFromDisk(dir)).toEqual({ crashSpots: [], hazards: [], ramps: [], fatalities: [], safetyConcerns: [] });
   });
 });

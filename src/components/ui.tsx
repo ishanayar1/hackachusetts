@@ -2,6 +2,7 @@
 // Small shared presentational pieces: status icons that match the map shapes, source badge, messages.
 import type { DataSource } from '@/lib/mbta/types';
 import { formatTime, STATE_TEXT, type StepFreeState } from '@/lib/ui/format';
+import { useT } from '@/lib/i18n';
 
 /** Same shapes as the map: filled green dot, green dot in an amber ring with "!", hollow red ring with ×, small grey dot. */
 export function StateIcon({ state, size = 18 }: { state: StepFreeState; size?: number }) {
@@ -27,21 +28,23 @@ export function StateIcon({ state, size = 18 }: { state: StepFreeState; size?: n
 }
 
 export function StateText({ state }: { state: StepFreeState }) {
+  const t = useT();
   return (
     <span className="inline-flex items-center gap-1.5">
       <StateIcon state={state} />
-      <span>{STATE_TEXT[state]}</span>
+      <span>{t(STATE_TEXT[state])}</span>
     </span>
   );
 }
 
 export function SourceBadge({ source, fetchedAt }: { source?: DataSource; fetchedAt?: string }) {
+  const t = useT();
   if (!source || source === 'v3') return null;
   return (
     <p className="mt-2 inline-flex items-center gap-1.5 rounded border border-amber-700 bg-amber-50 px-2 py-1 text-sm text-amber-900">
       <span aria-hidden="true">⚠</span>
-      Showing saved data from {formatTime(fetchedAt) || 'earlier'}
-      {source === 'demo' ? ' (demo snapshot)' : ''}
+      {t('Showing saved data from {time}', { time: formatTime(fetchedAt) || t('earlier') })}
+      {source === 'demo' ? ` (${t('demo snapshot')})` : ''}
     </p>
   );
 }
@@ -59,6 +62,7 @@ export const btnPrimary =
 
 /** Star / unstar a station for "My stations". Text changes too, so state is not shown by the icon alone. */
 export function StarButton({ saved, name, onToggle }: { saved: boolean; name: string; onToggle: () => void }) {
+  const t = useT();
   return (
     <button
       type="button"
@@ -67,8 +71,8 @@ export function StarButton({ saved, name, onToggle }: { saved: boolean; name: st
       onClick={onToggle}
     >
       <span aria-hidden="true">{saved ? '★' : '☆'}</span>
-      {saved ? 'Saved' : 'Save'}
-      <span className="sr-only"> {name} to My stations</span>
+      {t(saved ? 'Saved' : 'Save')}
+      <span className="sr-only"> {t('{name} to My stations', { name })}</span>
     </button>
   );
 }

@@ -2,6 +2,8 @@
 
 LastMile is a mobile-friendly web app for people who can't use stairs: wheelchair users, parents with strollers, people with canes or heavy luggage. It shows which MBTA elevators, ramps and portable lifts are out of service right now, plans step-free subway trips that reroute around closures, tells you which station entrance to use, and lists things to watch for on the walk: poor curb ramps, open sidewalk reports and places with recorded pedestrian and bike crashes. Everything the map shows is also available as a text list.
 
+It also includes a **safe-route assistant** (the 🛡️ button, bottom-right): ask in plain language for a bike route between two Boston places and it returns the lowest-crash-risk route, actively steering around the worst crash intersections, highlights it on the map, and notes the nearest MBTA stops. See [Safe-route assistant](#safe-route-assistant).
+
 Built for Hackachusetts 2026 (Civic Action track) in Kiro. Next.js 16 (App Router), React 19, MapLibre via react-map-gl, Tailwind 4, SWR.
 
 ## Run locally
@@ -46,6 +48,34 @@ Put them in `.env` (or `.env.local`). Both are gitignored; never commit a key. `
 | `npm run capture:demo` | Save a live MBTA alerts snapshot to `public/data/demo-alerts.json` for demo mode |
 | `npm run mcp` | Start the MBTA MCP server used from Kiro (`mcp/mbta/server.ts`) |
 
+## Safe-route assistant
+
+A floating 🛡️ chat widget (bottom-right) that finds the lowest-crash-risk **bike**
+route between two Boston places and highlights it on the map. Ask it naturally,
+e.g. *"from Fenway Park to Boston Common"* or *"safest bike ride from MIT to the
+North End"*.
+
+How it works (all server-side in `src/app/api/chat/route.ts`):
+
+1. **Understand the request** — Gemini extracts the start and destination (a
+   regex parser is used when no `GEMINI_API_KEY` is set).
+2. **Geocode** both places with OpenStreetMap Nominatim.
+3. **Route** with Valhalla (bicycle costing, with alternatives), falling back to
+   OSRM. No straight-line fakery: if every router is unreachable it says so.
+4. **Avoid risk** — the worst crash intersections in the corridor (top ~15% by
+   the model's yearly estimate) are passed to Valhalla as `exclude_polygons`, so
+   it routes *around* them. Exclusions relax progressively if they would box in
+   the destination, and a route only counts as "avoided" when it is genuinely
+   lower-risk than the plain route (`src/lib/safe-route.ts`).
+5. **Score + explain** — each candidate is scored against the crash data; the
+   safest is chosen, Gemini phrases the answer (templated fallback otherwise),
+   and the route is drawn as a green line with a green start dot and a red
+   destination marker (`src/components/ChatWidget.tsx`, `MapView.tsx`).
+
+The assistant needs no API key to function; `GEMINI_API_KEY` only upgrades the
+intent parsing and the wording of replies. See the environment-variable notes
+above for keeping Gemini costs bounded.
+
 ## Docker
 
 The image is a multi-stage `node:22-alpine` build of the Next.js standalone server, running as a non-root user. Keys are passed in at runtime via `env_file` and are never baked into the image (`.env*` is in `.dockerignore`).
@@ -79,6 +109,7 @@ Note: phones need HTTPS for location, so use the Vercel link (not a LAN Docker U
 - **MBTA**: GTFS static feed (stations, entrances, pathways, elevators, parking) and the V3 API (alerts, facilities, predictions, vehicles). Data provided by the Massachusetts Bay Transportation Authority under the [MBTA developer license](https://www.mbta.com/developers). Not an official MBTA product.
 - **City of Boston / Analyze Boston** ([data.boston.gov](https://data.boston.gov)): Vision Zero crash records (shown as recorded crashes, historical, not live), 311 service requests (open sidewalk and street-light cases) and the Pedestrian Ramp Inventory.
 - **Walking directions**: [Valhalla](https://github.com/valhalla/valhalla) public server (FOSSGIS, `valhalla1.openstreetmap.de`) with an OSRM foot-routing fallback, then a straight-line estimate. Walking legs are estimates.
+- **Safe-route assistant**: OpenStreetMap [Nominatim](https://nominatim.openstreetmap.org) for geocoding place names, Valhalla/OSRM (bicycle) for the route, and the [Gemini API](https://ai.google.dev/) for request parsing and replies (optional). Routes and risk scoring are estimates, not guidance for any specific trip.
 - **Map**: [OpenFreeMap](https://openfreemap.org) tiles, map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors.
 
 Crash records reflect police reporting and are not a measure of how dangerous a place is for any one trip.
@@ -97,8 +128,9 @@ See `crash-risk/README.md` for details.
 
 ## Repo layout
 
-- `src/app` – pages and API route handlers (`/api/alerts`, `/api/route`, `/api/walk`, `/api/stations`, ...)
-- `src/lib` – routing, MBTA client, warnings, shared types (`src/lib/mbta/types.ts`)
+- `src/app` – pages and API route handlers (`/api/alerts`, `/api/route`, `/api/walk`, `/api/chat`, `/api/stations`, ...)
+- `src/lib` – routing, MBTA client, warnings, safe-route risk scoring (`src/lib/safe-route.ts`), shared types (`src/lib/mbta/types.ts`)
+- `src/components` – UI, incl. the safe-route assistant (`ChatWidget.tsx`)
 - `public/data` – committed static data built by the scripts above
 - `mcp/` – MBTA MCP server for Kiro; `.kiro/` – Kiro specs, steering and hooks
 - `docs/` – plan and tech-stack notes

@@ -5,32 +5,39 @@ import { useEffect, useId, useState } from 'react';
 import type { DataSource } from '@/lib/mbta/types';
 import type { Leg, RideLeg, RouteFailReason, RouteOk } from '@/lib/router';
 import type { Station, StationStatusRow } from '@/lib/ui/api';
-import { cleanEntranceId, facilityTypeWord, legRoutesText, stepFreeState } from '@/lib/ui/format';
+import { cleanEntranceId, facilityTypeWord, legRoutesText, routeName, stepFreeState } from '@/lib/ui/format';
 import { useFacilities, usePlatformNames, useRoute, useWalk, type RouteQuery } from '@/lib/ui/hooks';
 import {
+  DEMO_DESTINATIONS,
   DEMO_PLACE,
   formatDistance,
   getMyLocation,
+  haversineM,
   nearestStepFree,
   WALK_SOURCE_LABEL,
   warningLines,
+  type LatLon,
   type Place,
   type WalkResult,
 } from '@/lib/ui/walk';
+import BluebikesBox from './BluebikesBox';
 import { btn, btnPrimary, Notice, SourceBadge } from './ui';
+import WeatherBox from './WeatherBox';
+import { useT } from '@/lib/i18n';
 
+/** Symbol plus words, so the status is never shown by symbol alone. */
 const MARK = {
-  yes: '✓ step-free now',
-  partial: '! partly step-free now',
-  no: '✕ not step-free now',
-  unknown: '? no data',
+  yes: ['✓', 'step-free now'],
+  partial: ['!', 'partly step-free now'],
+  no: ['✕', 'not step-free now'],
+  unknown: ['?', 'no data'],
 } as const;
 
-const FAIL_TEXT: Record<RouteFailReason, (o: string, d: string) => string> = {
-  'origin-not-step-free': (o) => `There is no step-free way into ${o} right now.`,
-  'destination-not-step-free': (_o, d) => `There is no step-free way out at ${d} right now.`,
-  'no-path': (o, d) => `We could not find a step-free trip from ${o} to ${d} right now.`,
-  'unknown-station': () => 'We do not know one of these stations. Pick both from the lists.',
+const FAIL_TEXT: Record<RouteFailReason, string> = {
+  'origin-not-step-free': 'There is no step-free way into {o} right now.',
+  'destination-not-step-free': 'There is no step-free way out at {d} right now.',
+  'no-path': 'We could not find a step-free trip from {o} to {d} right now.',
+  'unknown-station': 'We do not know one of these stations. Pick both from the lists.',
 };
 
 /** Optional fields newer /api/route responses carry. Absent on older ones. */
@@ -46,12 +53,19 @@ type RideLegPlus = RideLeg & { towards?: string; alsoRoutes?: string[] };
 
 const hasCoords = (d: Door | undefined): d is Door => !!d && Number.isFinite(d.lat) && Number.isFinite(d.lon);
 type StartMode = 'station' | 'here' | 'demo';
+type EndMode = 'station' | 'place';
 
 const START_CHOICES: [StartMode, string][] = [
   ['station', 'A station'],
   ['here', 'My location'],
   ['demo', "Pretend I'm at Park Street (demo)"],
 ];
+const END_CHOICES: [EndMode, string][] = [
+  ['station', 'A station'],
+  ['place', 'A place'],
+];
+
+const mins = (m: number) => Math.max(1, Math.round(m));
 
 type Props = {
   stations: Station[];
@@ -65,6 +79,7 @@ type Props = {
 
 export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onSelectStation }: Props) {
   const ids = useId();
+  const t = useT();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [query, setQuery] = useState<RouteQuery | null>(null);
@@ -75,6 +90,10 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
   const [locError, setLocError] = useState('');
   /** Start place frozen when the trip was planned, so changing the radio does not change a shown trip. */
   const [walkPlace, setWalkPlace] = useState<Place | null>(null);
+  const [endMode, setEndMode] = useState<EndMode>('station');
+  const [destPlace, setDestPlace] = useState<Place | null>(null);
+  /** Destination place frozen when the trip was planned. */
+  const [destWalkPlace, setDestWalkPlace] = useState<Place | null>(null);
   const { data, error, isLoading, isValidating } = useRoute(query);
   const route = data?.data;
   const ok = route?.ok ? (route as RouteOkPlus) : null;
@@ -93,13 +112,28 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
   const walk = useWalk(walkPlace, walkTo);
   const walkData = boardStation ? walk.data?.data : undefined;
 
+  // Second walk: from the step-free exit the route chose (or the station centre) to the destination place.
+  const exitStation = query && destWalkPlace ? byId.get(query.to) : undefined;
+  const exitDoor = hasCoords(ok?.destinationExit) ? ok?.destinationExit : undefined;
+  const walkFrom: LatLon | null =
+    exitStation && routeSettled && ok
+      ? exitDoor
+        ? { lat: exitDoor.lat, lon: exitDoor.lon }
+        : { lat: exitStation.lat, lon: exitStation.lon }
+      : null;
+  const walk2 = useWalk(walkFrom, walkFrom ? destWalkPlace : null);
+  const walk2Data = exitStation && walkFrom ? walk2.data?.data : undefined;
+
   useEffect(() => {
     onRoute(ok ? ok.legs : null);
   }, [ok, onRoute]);
 
   useEffect(() => {
-    onWalk?.(walkData?.coordinates?.length ? [walkData.coordinates] : null);
-  }, [walkData, onWalk]);
+    const lines = [walkData?.coordinates, walk2Data?.coordinates].filter(
+      (c): c is [number, number][] => !!c && c.length > 1,
+    );
+    onWalk?.(lines.length ? lines : null);
+  }, [walkData, walk2Data, onWalk]);
 
   const nameOf = (id: string) => byId.get(id)?.name ?? id;
 
@@ -133,31 +167,42 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
     }
   };
 
+  const chooseDestPlace = (label: string) => {
+    const p = DEMO_DESTINATIONS.find((d) => d.label === label) ?? null;
+    setDestPlace(p);
+    if (p) {
+      const near = nearestStepFree(p, stations, live);
+      if (near) setTo(near.id);
+    }
+  };
+
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (startMode !== 'station' && !place)
-      return setFormError('Your start location is not set yet. Try your location again or pick another start.');
-    if (!from || !to) return setFormError('Choose both a start and a destination station.');
-    if (from === to) return setFormError('Start and destination are the same station.');
+      return setFormError(t('Your start location is not set yet. Try your location again or pick another start.'));
+    if (endMode === 'place' && !destPlace) return setFormError(t('Choose the place you are going to.'));
+    if (!from || !to) return setFormError(t('Choose both a start and a destination station.'));
+    if (from === to) return setFormError(t('Start and destination are the same station.'));
     setFormError('');
     setWalkPlace(startMode === 'station' ? null : place);
+    setDestWalkPlace(endMode === 'place' ? destPlace : null);
     setQuery({ from, to, closed: [] });
   };
 
   const options = stations.map((s) => (
     <option key={s.id} value={s.id}>
-      {s.name} — {MARK[stepFreeState(s, live.get(s.id))]}
+      {s.name} — {MARK[stepFreeState(s, live.get(s.id))][0]} {t(MARK[stepFreeState(s, live.get(s.id))][1])}
     </option>
   ));
 
   return (
     <section aria-labelledby="trip-h">
       <h2 id="trip-h" className="text-lg font-bold text-slate-900">
-        Plan a step-free trip
+        {t('Plan a step-free trip')}
       </h2>
       <form onSubmit={submit} className="mt-2 space-y-3">
         <fieldset>
-          <legend className="text-sm font-semibold text-slate-900">Start from</legend>
+          <legend className="text-sm font-semibold text-slate-900">{t('Start from')}</legend>
           <div className="mt-1">
             {START_CHOICES.map(([m, label]) => (
               <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
@@ -169,16 +214,18 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
                   onChange={() => chooseStart(m)}
                   className="h-5 w-5"
                 />
-                {label}
+                {t(label)}
               </label>
             ))}
           </div>
           <div aria-live="polite" className="text-sm text-slate-800">
-            {startMode === 'here' && locating && <p>Finding your location…</p>}
+            {startMode === 'here' && locating && <p>{t('Finding your location…')}</p>}
             {startMode !== 'station' && place && !locating && (
               <p>
-                Starting at {place.label}. Your location stays on this device and is only used to plan the walk. We
-                picked the closest step-free station; you can change it below.
+                {t(
+                  'Starting at {place}. Your location stays on this device and is only used to plan the walk. We picked the closest step-free station; you can change it below.',
+                  { place: place.label },
+                )}
               </p>
             )}
           </div>
@@ -186,14 +233,14 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
             <div className="mt-1 space-y-1">
               <Notice tone="error">{locError}</Notice>
               <button type="button" className={btn} onClick={() => void locate()}>
-                Try my location again
+                {t('Try my location again')}
               </button>
             </div>
           )}
         </fieldset>
         <div>
           <label htmlFor={`${ids}-from`} className="block text-sm font-semibold text-slate-900">
-            {startMode === 'station' ? 'From station' : 'Walk to station (where you board)'}
+            {t(startMode === 'station' ? 'From station' : 'Walk to station (where you board)')}
           </label>
           <select
             id={`${ids}-from`}
@@ -201,13 +248,59 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
             onChange={(e) => setFrom(e.target.value)}
             className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
           >
-            <option value="">Choose a station</option>
+            <option value="">{t('Choose a station')}</option>
             {options}
           </select>
         </div>
+        <fieldset>
+          <legend className="text-sm font-semibold text-slate-900">{t('Destination')}</legend>
+          <div className="mt-1">
+            {END_CHOICES.map(([m, label]) => (
+              <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
+                <input
+                  type="radio"
+                  name={`${ids}-end`}
+                  value={m}
+                  checked={endMode === m}
+                  onChange={() => {
+                    setEndMode(m);
+                    if (m === 'station') setDestPlace(null);
+                  }}
+                  className="h-5 w-5"
+                />
+                {t(label)}
+              </label>
+            ))}
+          </div>
+          {endMode === 'place' && (
+            <div>
+              <label htmlFor={`${ids}-place`} className="block text-sm font-semibold text-slate-900">
+                {t('Place')}
+              </label>
+              <select
+                id={`${ids}-place`}
+                value={destPlace?.label ?? ''}
+                onChange={(e) => chooseDestPlace(e.target.value)}
+                className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
+              >
+                <option value="">{t('Choose a place')}</option>
+                {DEMO_DESTINATIONS.map((p) => (
+                  <option key={p.label} value={p.label}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+              {destPlace && (
+                <p aria-live="polite" className="mt-1 text-sm text-slate-800">
+                  {t('We picked the closest step-free station to {place}; you can change it below.', { place: destPlace.label })}
+                </p>
+              )}
+            </div>
+          )}
+        </fieldset>
         <div>
           <label htmlFor={`${ids}-to`} className="block text-sm font-semibold text-slate-900">
-            To station
+            {t(endMode === 'place' ? 'Leave the train at (station)' : 'To station')}
           </label>
           <select
             id={`${ids}-to`}
@@ -215,26 +308,43 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
             onChange={(e) => setTo(e.target.value)}
             className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
           >
-            <option value="">Choose a station</option>
+            <option value="">{t('Choose a station')}</option>
             {options}
           </select>
         </div>
         <button type="submit" className={`${btnPrimary} w-full`}>
-          Find step-free route
+          {t('Find step-free route')}
         </button>
         {formError && <Notice tone="error">{formError}</Notice>}
       </form>
 
       <div aria-live="polite" className="mt-3">
-        {query && (isLoading || isValidating) && <p className="text-sm text-slate-800">Planning your trip…</p>}
-        {query && error && <Notice tone="error">Route planning is not available right now. Try again in a minute.</Notice>}
+        {query && (isLoading || isValidating) && <p className="text-sm text-slate-800">{t('Planning your trip…')}</p>}
+        {query && error && <Notice tone="error">{t('Route planning is not available right now. Try again in a minute.')}</Notice>}
       </div>
 
       {query && walkPlace && boardStation && (
         <WalkDetails
-          place={walkPlace}
-          station={boardStation}
-          entranceName={entrance ? entrance.name || ok?.originEntranceName || 'Step-free' : undefined}
+          id="walk-to-h"
+          heading={t('Walk to the station')}
+          fromText={walkPlace.label}
+          toText={
+            entrance
+              ? t('{door} at {station}', {
+                  door: entrance.name || ok?.originEntranceName || t('the step-free entrance'),
+                  station: boardStation.name,
+                })
+              : boardStation.name
+          }
+          centreNote={
+            entrance ? undefined : t('The walk ends at the middle of the station; look for its step-free entrance there.')
+          }
+          failText={t(
+            'Walking directions are not available right now. Head to {station} and look for the accessible entrance.',
+            { station: boardStation.name },
+          )}
+          start={walkPlace}
+          showBikes
           walk={walkData}
           loading={walk.isLoading || (!routeSettled && !walkData)}
           failed={!!walk.error && !walkData}
@@ -243,12 +353,28 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
         />
       )}
 
+      {query && ok && !walkPlace && byId.get(query.from) && (
+        <section aria-labelledby="start-h" className="mt-3 rounded-md border border-slate-500 bg-white p-3 text-slate-900">
+          <h3 id="start-h" className="font-bold">
+            {t('At {station}', { station: nameOf(query.from) })}
+          </h3>
+          <WeatherBox
+            point={entrance ? { lat: entrance.lat, lon: entrance.lon } : (byId.get(query.from) as Station)}
+            label={t('at {station}', { station: nameOf(query.from) })}
+          />
+          <BluebikesBox
+            point={entrance ? { lat: entrance.lat, lon: entrance.lon } : (byId.get(query.from) as Station)}
+            label={t('near {station}', { station: nameOf(query.from) })}
+          />
+        </section>
+      )}
+
       {query && route && !route.ok && (
         <div className="mt-2 space-y-2">
-          <Notice tone="error">{FAIL_TEXT[route.reason](nameOf(query.from), nameOf(query.to))}</Notice>
+          <Notice tone="error">{t(FAIL_TEXT[route.reason], { o: nameOf(query.from), d: nameOf(query.to) })}</Notice>
           {route.alternatives.length > 0 && (
             <>
-              <p className="text-sm font-semibold text-slate-900">Nearby stations that are step-free now:</p>
+              <p className="text-sm font-semibold text-slate-900">{t('Nearby stations that are step-free now:')}</p>
               <ul className="space-y-2">
                 {route.alternatives.map((a) => {
                   const useAsOrigin = route.reason === 'origin-not-step-free';
@@ -266,7 +392,10 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
                           setQuery(next);
                         }}
                       >
-                        {useAsOrigin ? 'Start from' : 'Go to'} {nameOf(a.stationId)} instead ({a.distanceKm} km away)
+                        {t(useAsOrigin ? 'Start from {name} instead ({km} km away)' : 'Go to {name} instead ({km} km away)', {
+                          name: nameOf(a.stationId),
+                          km: a.distanceKm,
+                        })}
                       </button>
                     </li>
                   );
@@ -276,7 +405,7 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
           )}
           {query.closed.length > 0 && (
             <button type="button" className={btn} onClick={() => setQuery({ ...query, closed: [] })}>
-              Reset pretend-broken elevators
+              {t('Reset pretend-broken elevators')}
             </button>
           )}
         </div>
@@ -294,72 +423,104 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
           onSelectStation={onSelectStation}
         />
       )}
+
+      {query && ok && destWalkPlace && exitStation && (
+        <WalkDetails
+          id="walk-from-h"
+          heading={t('Walk from the station')}
+          fromText={
+            exitDoor
+              ? t('{door} at {station}', {
+                  door: exitDoor.name || ok.destinationExitName || t('the step-free exit'),
+                  station: exitStation.name,
+                })
+              : exitStation.name
+          }
+          toText={destWalkPlace.label}
+          centreNote={exitDoor ? undefined : t('The walk starts at the middle of the station; leave by its step-free exit.')}
+          failText={t(
+            'Walking directions are not available right now. {place} is about {dist} from {station} in a straight line.',
+            {
+              place: destWalkPlace.label,
+              dist: formatDistance(haversineM(exitStation, destWalkPlace)),
+              station: exitStation.name,
+            },
+          )}
+          start={walkFrom}
+          walk={walk2Data}
+          loading={walk2.isLoading || (!routeSettled && !walk2Data)}
+          failed={!!walk2.error && !walk2Data}
+          source={walk2.data?.source}
+          fetchedAt={walk2.data?.fetchedAt}
+        />
+      )}
     </section>
   );
 }
 
 function WalkDetails({
-  place,
-  station,
-  entranceName,
+  id,
+  heading,
+  fromText,
+  toText,
+  centreNote,
+  failText,
+  start,
+  showBikes,
   walk,
   loading,
   failed,
   source,
   fetchedAt,
 }: {
-  place: Place;
-  station: Station;
-  entranceName?: string;
+  id: string;
+  heading: string;
+  fromText: string;
+  toText: string;
+  /** Shown when the walk starts or ends at the station centre instead of a door. */
+  centreNote?: string;
+  failText: string;
+  /** Walk start point, for the weather (and Bluebikes when showBikes). */
+  start: LatLon | null;
+  showBikes?: boolean;
   walk: WalkResult | undefined;
   loading: boolean;
   failed: boolean;
   source?: DataSource;
   fetchedAt?: string;
 }) {
-  // Only name an entrance when the walk really ends at it; otherwise it ends at the station centre.
-  const target = entranceName
-    ? `${/entrance/i.test(entranceName) ? entranceName : `${entranceName} entrance`} at ${station.name}`
-    : station.name;
-  const warnings = warningLines(walk?.warnings);
+  const t = useT();
+  const warnings = warningLines(walk?.warnings).map((w) => t(w));
   return (
-    <section aria-labelledby="walk-h" className="mt-3 rounded-md border border-slate-500 bg-white p-3 text-slate-900">
-      <h3 id="walk-h" className="font-bold">
-        Walk to the station
+    <section aria-labelledby={id} className="mt-3 rounded-md border border-slate-500 bg-white p-3 text-slate-900">
+      <h3 id={id} className="font-bold">
+        {heading}
       </h3>
       <div aria-live="polite">
-        {loading && !walk && <p className="text-sm">Finding a walking route…</p>}
-        {failed && (
-          <Notice tone="error">
-            Walking directions are not available right now. Head to {station.name} and look for the accessible entrance.
-          </Notice>
-        )}
+        {loading && !walk && <p className="text-sm">{t('Finding a walking route…')}</p>}
+        {failed && <Notice tone="error">{failText}</Notice>}
       </div>
       {walk && (
         <>
           <p className="mt-1">
-            From {place.label} to {target}: <strong>about {Math.max(1, Math.round(walk.minutes))} min</strong> (
-            {formatDistance(walk.distanceM)}).
+            {t('From {from} to {to}:', { from: fromText, to: toText })}{' '}
+            <strong>{t('about {n} min', { n: mins(walk.minutes) })}</strong> ({formatDistance(walk.distanceM)}).
           </p>
-          {!entranceName && (
-            <p className="text-sm text-slate-800">
-              The walk ends at the middle of the station; look for its step-free entrance there.
-            </p>
-          )}
+          {centreNote && <p className="text-sm text-slate-800">{centreNote}</p>}
           <p className="text-sm text-slate-800">
             <span aria-hidden="true">{walk.source === 'valhalla' ? '♿ ' : '⚠ '}</span>
-            {WALK_SOURCE_LABEL[walk.source] ?? walk.source}
-            {walk.approximate && walk.source === 'valhalla' ? ', approximate' : ''}. Shown as a dashed line on the map.
+            {t(WALK_SOURCE_LABEL[walk.source] ?? walk.source)}
+            {walk.approximate && walk.source === 'valhalla' ? `, ${t('approximate')}` : ''}. {t('Shown as a dashed line on the map.')}
           </p>
           {walk.source === 'straight' && (
             <p className="text-sm text-slate-800">
-              This is a straight line, not a street route. Check curbs and crossings on the way.
+              {t('This is a straight line, not a street route. Check curbs and crossings on the way.')}
             </p>
           )}
           <SourceBadge source={source} fetchedAt={fetchedAt} />
           {walk.steps.length > 0 && (
             <>
-              <h4 className="mt-2 text-sm font-semibold">Turn by turn</h4>
+              <h4 className="mt-2 text-sm font-semibold">{t('Turn by turn')}</h4>
               <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm">
                 {walk.steps.map((st, i) => (
                   <li key={i}>
@@ -372,11 +533,12 @@ function WalkDetails({
           )}
           {walk.warnings && (
             <>
-              <h4 className="mt-2 text-sm font-semibold">Along this walk</h4>
+              <h4 className="mt-2 text-sm font-semibold">{t('Along this walk')}</h4>
               {warnings.length === 0 ? (
                 <p className="text-sm text-slate-800">
-                  No recorded crash areas, reported hazards or poor curb ramps near this route in our data. The data
-                  can be incomplete.
+                  {t(
+                    'No recorded crash areas, recorded fatal crashes, resident reports, open 311 hazards or poor curb ramps near this route in our data. The data can be incomplete.',
+                  )}
                 </p>
               ) : (
                 <ul className="mt-1 space-y-1 text-sm">
@@ -389,12 +551,16 @@ function WalkDetails({
                 </ul>
               )}
               <p className="mt-1 text-xs text-slate-700">
-                Crash counts are historical recorded crashes (911 dispatches), not live.
+                {t(
+                  'Crash counts are historical recorded crashes (911 dispatches), not live. Fatal crashes and resident reports come from Boston Vision Zero.',
+                )}
               </p>
             </>
           )}
         </>
       )}
+      <WeatherBox point={start} label={t('at the start of this walk')} />
+      {showBikes && <BluebikesBox point={start} />}
     </section>
   );
 }
@@ -421,12 +587,18 @@ function RouteDetails({
   const needPlatforms = route.legs.some((l) => l.kind === 'ride' && !(l as RideLegPlus).towards);
   const platforms = usePlatformNames(needPlatforms);
   const { byId: facilities } = useFacilities();
+  const tr = useT();
+  const en = tr.lang === 'en';
 
+  // Names arrive cleaned from the server ("Boston Common elevator entrance"); use them as they are.
+  // cleanEntranceId is only a fallback for an older server that sends an id without a name.
   const doorName = (id: string | null, name: string | undefined, kind: 'entrance' | 'exit') => {
-    if (name) return new RegExp(kind, 'i').test(name) ? name : `${name} ${kind}`;
-    if (!id) return `Use the station's accessible ${kind} (no detailed data for this station)`;
+    if (name) return name;
+    if (!id) return tr(`Use the station's accessible ${kind} (no detailed data for this station)`);
     return cleanEntranceId(id, kind);
   };
+  const waitOf = (leg: Leg) => (leg.kind === 'ride' ? (leg as RideLeg).waitMinutes ?? 0 : 0);
+  const totalWait = route.waitMinutes ?? route.legs.reduce((s, l) => s + waitOf(l), 0);
 
   const toward = (leg: RideLegPlus) => {
     if (leg.towards) return leg.towards;
@@ -437,14 +609,31 @@ function RouteDetails({
   const legText = (leg: Leg) => {
     if (leg.kind === 'transfer') {
       return leg.fromPlatform === leg.toPlatform
-        ? `Change trains at ${nameOf(leg.stationId)} (same platform).`
-        : `Change at ${nameOf(leg.stationId)}: step-free path between platforms, about ${Math.round(leg.minutes)} min.`;
+        ? tr('Change trains at {station} (same platform).', { station: nameOf(leg.stationId) })
+        : tr('Change at {station}: step-free path between platforms, about {n} min.', {
+            station: nameOf(leg.stationId),
+            n: Math.round(leg.minutes),
+          });
     }
     const t = toward(leg);
     const stops = Math.max(1, leg.stationIds.length - 1);
+    const wait = waitOf(leg);
+    if (!en) {
+      const routes = [...new Set([leg.route, ...((leg as RideLegPlus).alsoRoutes ?? [])])].map(routeName).join(' / ');
+      return [
+        tr('Take {route} from {from} to {to}.', { route: routes, from: nameOf(leg.fromStation), to: nameOf(leg.toStation) }),
+        t ? tr('Toward {t}.', { t }) : '',
+        tr('Stops: {n}. About {m} min on the train.', { n: stops, m: mins(leg.minutes) }),
+        wait > 0 ? tr('Wait about {n} min for it.', { n: mins(wait) }) : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+    }
     return `Take ${legRoutesText(leg.route, (leg as RideLegPlus).alsoRoutes)}${t ? ` toward ${t}` : ''} from ${nameOf(leg.fromStation)} to ${nameOf(
       leg.toStation,
-    )} (${stops} ${stops === 1 ? 'stop' : 'stops'}, about ${Math.round(leg.minutes)} min).`;
+    )} (${stops} ${stops === 1 ? 'stop' : 'stops'}, about ${mins(leg.minutes)} min on the train${
+      wait > 0 ? `; wait about ${mins(wait)} min for it` : ''
+    }).`;
   };
 
   const demoClosed = query.closed;
@@ -453,17 +642,22 @@ function RouteDetails({
     <div className="mt-3 space-y-3">
       <div className="rounded-md border border-emerald-800 bg-emerald-50 p-3 text-slate-900">
         <p className="font-bold">
-          <span aria-hidden="true">✓ </span>Step-free route found: about {Math.round(route.minutes)} minutes on the
-          train
+          <span aria-hidden="true">✓ </span>
+          {tr('Step-free route found: about {n} min', { n: mins(route.minutes) })}
+          {totalWait > 0 && ` ${tr('(including about {n} min waiting)', { n: mins(totalWait) })}`}
         </p>
         <p className="text-sm">
-          {route.transfers === 0 ? 'No changes.' : `${route.transfers} ${route.transfers === 1 ? 'change' : 'changes'}.`}{' '}
-          Times are approximate, from the schedule.
+          {route.transfers === 0
+            ? tr('No changes.')
+            : en
+              ? `${route.transfers} ${route.transfers === 1 ? 'change' : 'changes'}.`
+              : tr('Changes: {n}.', { n: route.transfers })}{' '}
+          {tr('Platform to platform; walks are listed separately. Times are approximate, from the weekday schedule')}
+          {totalWait > 0 ? ` ${tr('(waits are half the usual time between trains)')}` : ''}.
         </p>
         {route.approximate && (
           <p className="mt-1 text-sm">
-            Some stations on this trip have no detailed elevator map, so we used the MBTA&apos;s station accessibility
-            flag there.
+            {tr("Some stations on this trip have no detailed elevator map, so we used the MBTA's station accessibility flag there.")}
           </p>
         )}
         <SourceBadge source={source} fetchedAt={fetchedAt} />
@@ -471,7 +665,7 @@ function RouteDetails({
 
       <ol className="space-y-2 text-sm text-slate-900">
         <li className="rounded border border-slate-300 bg-white p-2">
-          <strong>Enter by:</strong> {doorName(route.originEntranceId, route.originEntranceName ?? route.originEntrance?.name, 'entrance')} at{' '}
+          <strong>{tr('Enter by:')}</strong> {doorName(route.originEntranceId, route.originEntranceName ?? route.originEntrance?.name, 'entrance')} {tr('at')}{' '}
           <button
             type="button"
             className="min-h-11 font-semibold text-blue-800 underline"
@@ -486,7 +680,7 @@ function RouteDetails({
           </li>
         ))}
         <li className="rounded border border-slate-300 bg-white p-2">
-          <strong>Exit by:</strong> {doorName(route.destinationExitId, route.destinationExitName ?? route.destinationExit?.name, 'exit')} at{' '}
+          <strong>{tr('Exit by:')}</strong> {doorName(route.destinationExitId, route.destinationExitName ?? route.destinationExit?.name, 'exit')} {tr('at')}{' '}
           <button
             type="button"
             className="min-h-11 font-semibold text-blue-800 underline"
@@ -499,23 +693,23 @@ function RouteDetails({
 
       <section aria-labelledby="demo-h" className="rounded-md border-2 border-dashed border-slate-500 p-3">
         <h3 id="demo-h" className="font-bold text-slate-900">
-          Demo: break an elevator
+          {tr('Demo: break an elevator')}
         </h3>
-        <p className="text-sm text-slate-800">Elevators and ramps this route needs:</p>
+        <p className="text-sm text-slate-800">{tr('Elevators and ramps this route needs:')}</p>
         {route.usedFacilityIds.length === 0 ? (
-          <p className="mt-1 text-sm text-slate-800">None listed for this route (no detailed data, or level access).</p>
+          <p className="mt-1 text-sm text-slate-800">{tr('None listed for this route (no detailed data, or level access).')}</p>
         ) : (
           <ul className="mt-2 space-y-2">
             {route.usedFacilityIds.map((id) => {
               const f = facilities.get(id);
-              const word = facilityTypeWord(f?.type ?? 'ELEVATOR');
+              const word = tr(facilityTypeWord(f?.type ?? 'ELEVATOR'));
               return (
                 <li key={id} className="rounded border border-slate-300 bg-white p-2 text-sm">
                   <p className="text-slate-900">
-                    <span className="font-semibold capitalize">{word}</span>: {f?.name ?? `Facility ${id}`}
+                    <span className="font-semibold capitalize">{word}</span>: {f?.name ?? tr('Facility {id}', { id })}
                   </p>
                   <button type="button" className={`${btn} mt-1`} onClick={() => onBreak(id)}>
-                    Pretend this {word} is broken
+                    {tr('Pretend this {word} is broken', { word })}
                   </button>
                 </li>
               );
@@ -525,11 +719,11 @@ function RouteDetails({
         {demoClosed.length > 0 && (
           <div className="mt-2 text-sm text-slate-900">
             <p>
-              Pretending broken:{' '}
+              {tr('Pretending broken:')}{' '}
               {demoClosed.map((id) => facilities.get(id)?.shortName ?? facilities.get(id)?.name ?? id).join('; ')}
             </p>
             <button type="button" className={`${btn} mt-1`} onClick={onReset}>
-              Reset
+              {tr('Reset')}
             </button>
           </div>
         )}
