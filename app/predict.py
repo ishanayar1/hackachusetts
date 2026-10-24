@@ -26,8 +26,10 @@ from pathlib import Path
 import h3
 import numpy as np
 import pandas as pd
+from sklearn.cluster import DBSCAN
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_poisson_deviance
+from sklearn.neighbors import BallTree
 
 # ----------------------------------------------------------------------------
 # Config
@@ -39,61 +41,65 @@ DATA_DIR = HERE.parent / "vision-zero"
 DATA = DATA_DIR / "data.csv"
 OUT_GEOJSON = HERE / "risk.geojson"
 
-H3_RES = 9            # ~0.10 km^2 hexes (finer). res 8 coarser, res 10 finer.
 TRAIN_END = "2024-12-31"   # train on <= this date, test on what comes after
 MODES = ["mv", "ped", "bike"]
+SITE_SPLIT_M = 150    # same street-name pair farther apart than this = different intersections
+NEIGHBOR_M = 300      # radius for the neighbor-risk feature
+TZ = "America/New_York"
 
 
 # ----------------------------------------------------------------------------
-# 1. Load + clean
+# 1. Load + clean: one row per intersection crash, keyed by intersection site
 # ----------------------------------------------------------------------------
-def load_crashes() -> pd.DataFrame:
-    df = pd.read_csv(DATA)
+def intersection_key(a: str, b: str) -> str:
+    """Order/case/space-insensitive name for the intersection of streets a and b."""
+    return " & ".join(sorted(s.strip().upper() for s in (a, b)))
+
+
+def assign_sites(df: pd.DataFrame) -> pd.Series:
+    """Site id per crash: the intersection name, split by location when one
+    name pair occurs in several places (e.g. Washington St in two neighborhoods)."""
+    site = df["name"].copy()
+    for name, g in df.groupby("name"):
+        if len(g) < 2:
+            continue
+        labels = DBSCAN(eps=SITE_SPLIT_M / 6_371_000, min_samples=1,
+                        metric="haversine").fit_predict(
+            np.radians(g[["latitude", "longitude"]].to_numpy()))
+        if labels.max() == 0:
+            continue
+        # number clusters by size, largest first
+        order = pd.Series(labels).value_counts().index
+        rank = {lab: i + 1 for i, lab in enumerate(order)}
+        site.loc[g.index] = [f"{name} #{rank[lab]}" for lab in labels]
+    return site
+
+
+def load_crashes(path: Path = DATA) -> pd.DataFrame:
+    df = pd.read_csv(path)
     df["when"] = pd.to_datetime(df["when"], utc=True, errors="coerce")
     df = df.dropna(subset=["when", "latitude", "longitude"])
     # Keep Boston-ish bounding box; drop obvious junk coordinates.
     df = df[
         df["latitude"].between(42.20, 42.45)
         & df["longitude"].between(-71.20, -70.98)
-    ].copy()
-    df["hex"] = [
-        h3.latlng_to_cell(lat, lng, H3_RES)
-        for lat, lng in zip(df["latitude"], df["longitude"])
     ]
+    # Intersection rows carry the two crossing streets in cross_street(_2);
+    # mid-block ("Street") and "Other" rows have no intersection to predict.
+    a = df["cross_street"].fillna("").astype(str).str.strip()
+    b = df["cross_street_2"].fillna("").astype(str).str.strip()
+    df = df[(df["where"] == "Intersection") & (a != "") & (b != "")].copy()
+    df["name"] = [intersection_key(x, y) for x, y in
+                  zip(df["cross_street"], df["cross_street_2"])]
+    df["site"] = assign_sites(df)
+    df["local"] = df["when"].dt.tz_convert(TZ)
     # Floor each timestamp to the first of its month (tz-naive).
     df["month"] = df["when"].dt.tz_localize(None).values.astype("datetime64[M]")
     df["month"] = pd.to_datetime(df["month"])
     return df
 
 
-# ----------------------------------------------------------------------------
-# 1b. Human-readable location label per hexagon (from the CSV street data)
-# ----------------------------------------------------------------------------
-def _row_label(r: pd.Series) -> str:
-    """Build a readable place name from a crash row's street fields."""
-    def clean(x):
-        return str(x).strip().title() if pd.notna(x) and str(x).strip() else ""
-
-    street = clean(r.get("street"))
-    x1 = clean(r.get("cross_street"))
-    x2 = clean(r.get("cross_street_2"))
-    crosses = [c for c in (x1, x2) if c and "Ramp" not in c]
-    if street and crosses:
-        return f"{street} @ {crosses[0]}"
-    if street:
-        return street
-    if len(crosses) >= 2:
-        return f"{crosses[0]} @ {crosses[1]}"
-    if crosses:
-        return crosses[0]
-    return "Unknown location"
-
-
-# --- OpenStreetMap Nominatim reverse geocoding (free, no key) -----------------
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
-GEOCACHE = HERE / "geocache.json"
-# Nominatim usage policy: <= 1 request/second, identify yourself via User-Agent.
-NOMINATIM_UA = "HackachusettsVisionZero/1.0 (crash-risk demo)"
+GEOCACHE = HERE / "geocache.json"   # cached OSM Nominatim labels per H3 res-9 cell
 
 
 def _load_geocache() -> dict:
@@ -103,60 +109,6 @@ def _load_geocache() -> dict:
         except json.JSONDecodeError:
             return {}
     return {}
-
-
-def _osm_name(addr: dict) -> str:
-    """Turn a Nominatim address object into a short, readable place name."""
-    road = addr.get("road") or addr.get("pedestrian") or addr.get("footway")
-    area = (addr.get("neighbourhood") or addr.get("suburb")
-            or addr.get("city_district") or addr.get("quarter"))
-    if road and area:
-        return f"{road}, {area}"
-    if road:
-        return road
-    if area:
-        return area
-    return addr.get("city") or "Unknown location"
-
-
-def reverse_geocode_hexes(coords: dict[str, tuple[float, float]]) -> dict[str, str]:
-    """Reverse-geocode each hex centroid via OSM Nominatim, with disk caching.
-
-    coords: {hex_id: (lat, lng)}. Returns {hex_id: osm_label}.
-    Cached results are reused, so this only pays the ~1 req/sec cost once.
-    """
-    import time
-    import urllib.parse
-    import urllib.request
-
-    cache = _load_geocache()
-    todo = [h for h in coords if h not in cache]
-    if todo:
-        print(f"  reverse-geocoding {len(todo)} new hexes via OSM Nominatim "
-              f"(~{len(todo)}s, respecting 1 req/sec)...")
-    for i, hx in enumerate(todo, 1):
-        lat, lng = coords[hx]
-        qs = urllib.parse.urlencode({
-            "lat": f"{lat:.6f}", "lon": f"{lng:.6f}",
-            "format": "jsonv2", "zoom": "17", "addressdetails": "1",
-        })
-        req = urllib.request.Request(
-            f"{NOMINATIM_URL}?{qs}", headers={"User-Agent": NOMINATIM_UA}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                data = json.loads(resp.read())
-            cache[hx] = _osm_name(data.get("address", {}))
-        except Exception as e:  # network/timeout/etc. — leave for CSV fallback
-            cache[hx] = ""
-            if i <= 3:
-                print(f"    warn: geocode failed for {hx}: {e}")
-        time.sleep(1.1)  # stay under Nominatim's 1 req/sec limit
-        if i % 50 == 0:
-            GEOCACHE.write_text(json.dumps(cache))  # checkpoint
-            print(f"    {i}/{len(todo)} geocoded...")
-    GEOCACHE.write_text(json.dumps(cache))
-    return cache
 
 
 def hex_labels(df: pd.DataFrame, geocode: bool = True) -> pd.DataFrame:
