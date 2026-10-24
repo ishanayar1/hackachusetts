@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Boston Crash Risk — Vision Zero</title>
+  <!-- MapLibre GL JS: renders OpenFreeMap vector tiles (no API key) -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  <style>
+    :root {
+      --bg: #0f1116; --panel: #171a21; --panel2: #1e222b;
+      --text: #eaecef; --muted: #9aa3b2; --line: #262b36;
+      --accent: #f7943c; --danger: #c41e1e;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, sans-serif;
+      background: var(--bg); color: var(--text); overflow: hidden; }
+    #app { display: flex; height: 100%; }
+
+    /* Sidebar */
+    #sidebar { width: 380px; min-width: 380px; height: 100%;
+      background: var(--panel); border-right: 1px solid var(--line);
+      display: flex; flex-direction: column; }
+    .head { padding: 16px 18px 12px; border-bottom: 1px solid var(--line); }
+    .head h1 { font-size: 17px; margin: 0 0 2px; }
+    .head p { font-size: 12px; color: var(--muted); margin: 0; line-height: 1.4; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+      padding: 12px 18px; border-bottom: 1px solid var(--line); }
+    .stat { background: var(--panel2); border-radius: 8px; padding: 8px 10px; }
+    .stat .v { font-size: 18px; font-weight: 650; }
+    .stat .k { font-size: 10px; color: var(--muted); text-transform: uppercase;
+      letter-spacing: .04em; margin-top: 2px; }
+
+    .searchbar { padding: 12px 18px 8px; }
+    .searchbar input { width: 100%; padding: 9px 11px; border-radius: 8px;
+      border: 1px solid var(--line); background: var(--panel2); color: var(--text);
+      font-size: 13px; outline: none; }
+    .searchbar input:focus { border-color: var(--accent); }
+
+    .list { flex: 1; overflow-y: auto; padding: 4px 10px 14px; }
+    .loc { padding: 10px 12px; border-radius: 9px; cursor: pointer;
+      border: 1px solid transparent; margin-bottom: 4px; display: flex; gap: 10px;
+      align-items: center; }
+    .loc:hover { background: var(--panel2); }
+    .loc.active { background: var(--panel2); border-color: var(--accent); }
+    .rank { font-size: 12px; color: var(--muted); width: 22px; text-align: right; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+    .loc .body { flex: 1; min-width: 0; }
+    .loc .name { font-size: 13px; font-weight: 550; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; }
+    .loc .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .risk-pill { font-size: 12px; font-weight: 650; padding: 2px 8px;
+      border-radius: 20px; background: var(--panel); white-space: nowrap; }
+
+    /* Map */
+    #map { flex: 1; height: 100%; background: #0c0e13; }
+    /* dark backdrop shows through when the basemap tiles are hidden */
+    #map.no-tiles .maplibregl-canvas { background: #0c0e13; }
+
+    /* Basemap toggle */
+    .toggle { position: absolute; top: 12px; right: 12px; z-index: 1000;
+      background: rgba(20,22,28,0.92); color: var(--text); padding: 8px 10px;
+      border-radius: 10px; font-size: 12px; display: flex; align-items: center;
+      gap: 8px; user-select: none; box-shadow: 0 4px 18px rgba(0,0,0,0.35); }
+    .toggle label { cursor: pointer; }
+    .switch { position: relative; width: 36px; height: 20px; }
+    .switch input { opacity: 0; width: 0; height: 0; }
+    .slider { position: absolute; inset: 0; background: #3a4150; border-radius: 20px;
+      transition: .2s; cursor: pointer; }
+    .slider:before { content: ""; position: absolute; height: 14px; width: 14px;
+      left: 3px; top: 3px; background: #fff; border-radius: 50%; transition: .2s; }
+    .switch input:checked + .slider { background: var(--accent); }
+    .switch input:checked + .slider:before { transform: translateX(16px); }
+
+    .legend { position: absolute; bottom: 18px; right: 12px; z-index: 1000;
+      background: rgba(20,22,28,0.92); color: var(--text); padding: 10px 12px;
+      border-radius: 10px; font-size: 12px; }
+    .legend i { width: 14px; height: 14px; display: inline-block; margin-right: 6px;
+      vertical-align: -2px; border-radius: 3px; }
+    .maplibregl-popup-content { font-size: 13px; line-height: 1.5;
+      border-radius: 8px; padding: 10px 12px; color: #1a1a1a; }
+    .maplibregl-popup-content b { color: #111; }
+    .modebars { display: flex; gap: 4px; margin-top: 6px; }
+    .modebars span { font-size: 11px; padding: 1px 6px; border-radius: 4px;
+      background: #eee; color: #333; }
+    .foot { font-size: 10px; color: var(--muted); padding: 8px 18px;
+      border-top: 1px solid var(--line); }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="head">
+        <h1>Boston Crash Risk</h1>
+        <p>Predicted crash risk by location for the month ahead, from 11 years
+           of Vision Zero records. Combines where and when.</p>
+      </div>
+      <div class="stats" id="stats">
+        <div class="stat"><div class="v" id="s-hex">—</div><div class="k">Zones</div></div>
+        <div class="stat"><div class="v" id="s-hist">—</div><div class="k">Crashes (11y)</div></div>
+        <div class="stat"><div class="v" id="s-top">—</div><div class="k">Top risk/yr</div></div>
+      </div>
+      <div class="searchbar">
+        <input id="search" type="text" placeholder="Search a street or intersection…" />
+      </div>
+      <div class="list" id="list"></div>
+      <div class="foot">Risk = model-predicted expected crashes. Police-reported
+        data; reflects reporting bias, not ground truth.</div>
+    </aside>
+    <div id="map"></div>
+    <div class="toggle">
+      <label for="tileToggle">Hexagon overlay</label>
+      <span class="switch">
+        <input type="checkbox" id="tileToggle" checked />
+        <span class="slider"></span>
+      </span>
+    </div>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script>
+    // --- OpenFreeMap vector basemap via MapLibre GL JS (free, NO API key) ---
+    const map = new maplibregl.Map({
+      container: "map",
+      style: "https://tiles.openfreemap.org/styles/liberty",
+      center: [-71.08, 42.32],   // note: MapLibre uses [lng, lat]
+      zoom: 11.5,
+    });
+    map.addControl(new maplibregl.NavigationControl(), "top-right");
+
+    function color(t) {
+      const stops = [
+        [0.00, [40, 60, 90]], [0.25, [250, 227, 90]],
+        [0.55, [247, 148, 42]], [1.00, [196, 30, 30]],
+      ];
+      for (let i = 1; i < stops.length; i++) {
+        if (t <= stops[i][0]) {
+          const [t0, c0] = stops[i - 1], [t1, c1] = stops[i];
+          const f = (t - t0) / (t1 - t0);
+          const c = c0.map((v, j) => Math.round(v + f * (c1[j] - v)));
+          return `rgb(${c[0]},${c[1]},${c[2]})`;
+        }
+      }
+      return "rgb(196,30,30)";
+    }
+
+    const hexCenters = {};   // hex id -> [lng, lat], for the sidebar fly-to
+    let activeEl = null;
+
+    function popupHtml(p) {
+      return `<b>${p.label}</b><br/>` +
+        `Predicted: <b>${p.risk_yr}</b> crashes/year<br/>` +
+        `Risk score: ${(p.risk_norm * 100).toFixed(0)}/100<br/>` +
+        `<span style="color:#666">Historic: ${p.total_crashes} crashes ` +
+        `(🚗 ${p.mv} · 🚶 ${p.ped} · 🚲 ${p.bike})</span>`;
+    }
+
+    // Load the risk layer as a GeoJSON source + fill layer once the style is ready.
+    map.on("load", () => {
+      fetch("/api/risk").then(r => r.json()).then(gj => {
+        // precompute a risk color per feature (MapLibre expressions can't call JS)
+        gj.features.forEach(f => {
+          f.properties._color = color(f.properties.risk_norm);
+          hexCenters[f.properties.hex] = [f.properties.lng, f.properties.lat];
+        });
+
+        map.addSource("risk", { type: "geojson", data: gj });
+
+        // Insert the risk layers BELOW the first text/symbol layer so that
+        // street + place NAMES from the basemap always stay on top and legible.
+        const firstSymbol = map.getStyle().layers
+          .find(l => l.type === "symbol");
+        const beforeId = firstSymbol ? firstSymbol.id : undefined;
+
+        map.addLayer({
+          id: "risk-fill", type: "fill", source: "risk",
+          paint: {
+            "fill-color": ["get", "_color"],
+            "fill-opacity": 0.55,
+          },
+        }, beforeId);
+        map.addLayer({
+          id: "risk-outline", type: "line", source: "risk",
+          paint: { "line-color": "#333", "line-width": 0.3 },
+        }, beforeId);
+        // highlight outline for the hovered hex (kept on top)
+        map.addLayer({
+          id: "risk-hover", type: "line", source: "risk",
+          paint: { "line-color": "#ffffff", "line-width": 2 },
+          filter: ["==", "hex", ""],
+        });
+
+        const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "260px" });
+
+        map.on("mousemove", "risk-fill", (e) => {
+          map.getCanvas().style.cursor = "pointer";
+          const f = e.features[0];
+          map.setFilter("risk-hover", ["==", "hex", f.properties.hex]);
+        });
+        map.on("mouseleave", "risk-fill", () => {
+          map.getCanvas().style.cursor = "";
+          map.setFilter("risk-hover", ["==", "hex", ""]);
+        });
+        map.on("click", "risk-fill", (e) => {
+          const p = e.features[0].properties;
+          popup.setLngLat(e.lngLat).setHTML(popupHtml(p)).addTo(map);
+        });
+
+        // expose a helper for the sidebar to open a hex programmatically
+        window._openHex = (hex, lngLat) => {
+          const feats = map.querySourceFeatures("risk",
+            { filter: ["==", "hex", hex] });
+          const p = feats.length ? feats[0].properties : null;
+          if (p) popup.setLngLat(lngLat).setHTML(popupHtml(p)).addTo(map);
+          map.setFilter("risk-hover", ["==", "hex", hex]);
+        };
+
+        // --- Risk-hexagon toggle -----------------------------------------
+        // The OpenFreeMap basemap (streets + names) is ALWAYS visible.
+        // ON  : discrete risk hexagons drawn as a colored overlay on the map.
+        // OFF : hexagons drop below the roads and the street network itself
+        //       takes on the risk color, so the MAP shows the prone zones.
+        const ROAD_LAYERS = [
+          "road_motorway", "road_motorway_link",
+          "road_trunk_primary", "road_secondary_tertiary",
+          "road_minor", "road_link",
+          "bridge_motorway", "bridge_trunk_primary", "bridge_street",
+          "tunnel_motorway", "tunnel_trunk_primary",
+        ].filter(id => map.getLayer(id));
+
+        // remember each road layer's original paint so we can restore it
+        const roadOrig = {};
+        ROAD_LAYERS.forEach(id => {
+          roadOrig[id] = {
+            color: map.getPaintProperty(id, "line-color"),
+            width: map.getPaintProperty(id, "line-width"),
+          };
+        });
+
+        function setHexOverlay(on) {
+          if (on) {
+            // OVERLAY MODE: solid risk hexagons sit on top of the map.
+            map.setLayoutProperty("risk-fill", "visibility", "visible");
+            map.setPaintProperty("risk-fill", "fill-opacity", 0.55);
+            map.setLayoutProperty("risk-outline", "visibility", "visible");
+            ROAD_LAYERS.forEach(id => {
+              map.setPaintProperty(id, "line-color", roadOrig[id].color);
+              if (roadOrig[id].width != null)
+                map.setPaintProperty(id, "line-width", roadOrig[id].width);
+            });
+          } else {
+            // OFF: hide the risk hexagons entirely — show only the plain
+            // OpenFreeMap basemap, with its roads at their original colours.
+            map.setLayoutProperty("risk-fill", "visibility", "none");
+            map.setLayoutProperty("risk-outline", "visibility", "none");
+            map.setFilter("risk-hover", ["==", "hex", ""]);
+            ROAD_LAYERS.forEach(id => {
+              map.setPaintProperty(id, "line-color", roadOrig[id].color);
+              if (roadOrig[id].width != null)
+                map.setPaintProperty(id, "line-width", roadOrig[id].width);
+            });
+          }
+        }
+
+        document.getElementById("tileToggle")
+          .addEventListener("change", (e) => setHexOverlay(e.target.checked));
+      });
+    });
+
+    // Stats header
+    fetch("/api/stats").then(r => r.json()).then(s => {
+      document.getElementById("s-hex").textContent = s.hexagons.toLocaleString();
+      document.getElementById("s-hist").textContent =
+        (s.historical_crashes / 1000).toFixed(0) + "k";
+      document.getElementById("s-top").textContent = s.top_risk_yr.toFixed(0);
+    });
+
+    // Ranked location list (with search)
+    const listEl = document.getElementById("list");
+    function renderList(rows) {
+      listEl.innerHTML = "";
+      rows.forEach((r, i) => {
+        const el = document.createElement("div");
+        el.className = "loc";
+        el.innerHTML =
+          `<div class="rank">${i + 1}</div>` +
+          `<div class="dot" style="background:${color(r.risk_norm)}"></div>` +
+          `<div class="body">` +
+            `<div class="name">${r.label}</div>` +
+            `<div class="sub">🚗 ${r.mv} · 🚶 ${r.ped} · 🚲 ${r.bike} · ` +
+              `${r.total_crashes} total</div>` +
+          `</div>` +
+          `<div class="risk-pill" style="color:${color(r.risk_norm)}">` +
+            `${r.risk_yr.toFixed(1)}/yr</div>`;
+        el.onclick = () => focusHex(r, el);
+        listEl.appendChild(el);
+      });
+      if (!rows.length) listEl.innerHTML =
+        '<p style="color:var(--muted);padding:12px">No locations match.</p>';
+    }
+
+    function focusHex(r, el) {
+      const lngLat = [r.lng, r.lat];
+      map.flyTo({ center: lngLat, zoom: 15.5, duration: 800 });
+      // open the popup after the camera settles and tiles/features are queryable
+      if (window._openHex) setTimeout(() => window._openHex(r.hex, lngLat), 850);
+      if (activeEl) activeEl.classList.remove("active");
+      el.classList.add("active");
+      activeEl = el;
+    }
+
+    function loadLocations(q = "") {
+      fetch("/api/locations?limit=150&q=" + encodeURIComponent(q))
+        .then(r => r.json()).then(d => renderList(d.results));
+    }
+    loadLocations();
+
+    let t;
+    document.getElementById("search").addEventListener("input", (e) => {
+      clearTimeout(t);
+      t = setTimeout(() => loadLocations(e.target.value), 180);
+    });
+
+    // Legend
+    document.getElementById("legend").innerHTML = "<b>Predicted risk</b><br/>" +
+      [["Low", 0.05], ["", 0.3], ["", 0.6], ["High", 1.0]]
+        .map(([l, v]) => `<i style="background:${color(v)}"></i>${l}`).join("<br/>");
+  </script>
+</body>
+</html>
