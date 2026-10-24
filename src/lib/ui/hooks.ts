@@ -1,0 +1,101 @@
+'use client';
+// SWR hooks for static files and live API routes. Polling pauses while the tab is hidden.
+import { useMemo } from 'react';
+import useSWR from 'swr';
+import {
+  fetchJson,
+  type AlertsData,
+  type ApiEnvelope,
+  type CrashLocationsData,
+  type Facility,
+  type PlannedRoute,
+  type Prediction,
+  type Station,
+  type StationDetailData,
+  type StationsStatusData,
+} from './api';
+import type { StationPathways } from '@/lib/mbta/types';
+
+const STATIC = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false, shouldRetryOnError: false };
+const LIVE = { refreshWhenHidden: false, refreshWhenOffline: false, keepPreviousData: true };
+
+export function useStations() {
+  const { data, error } = useSWR<Station[]>('/data/stations.json', fetchJson, STATIC);
+  const byId = useMemo(() => new Map((data ?? []).map((s) => [s.id, s])), [data]);
+  const sorted = useMemo(() => [...(data ?? [])].sort((a, b) => a.name.localeCompare(b.name)), [data]);
+  return { stations: data, byId, sorted, error };
+}
+
+export function useFacilities() {
+  const { data, error } = useSWR<Facility[]>('/data/facilities.json', fetchJson, STATIC);
+  const byId = useMemo(() => new Map((data ?? []).map((f) => [f.id, f])), [data]);
+  return { facilities: data, byId, error };
+}
+
+/** Platform names ("Alewife", "Forest Hills") used for "toward ..." wording. */
+export function usePlatformNames() {
+  const { data } = useSWR<{ platforms: Record<string, { name: string }> }>('/data/network.json', fetchJson, STATIC);
+  return data?.platforms;
+}
+
+/** Entrance names live in pathways.json (large), so only load it once a route needs them. */
+export function usePathways(enabled: boolean) {
+  const { data } = useSWR<Record<string, StationPathways>>(enabled ? '/data/pathways.json' : null, fetchJson, STATIC);
+  return data;
+}
+
+export function useAlerts() {
+  return useSWR<ApiEnvelope<AlertsData>>('/api/alerts', fetchJson, { ...LIVE, refreshInterval: 30_000 });
+}
+
+export function useStationsStatus() {
+  return useSWR<ApiEnvelope<StationsStatusData>>('/api/stations/status', fetchJson, {
+    ...LIVE,
+    refreshInterval: 30_000,
+    errorRetryCount: 2,
+  });
+}
+
+export function useStationDetail(id: string | null) {
+  return useSWR<ApiEnvelope<StationDetailData>>(id ? `/api/station/${encodeURIComponent(id)}` : null, fetchJson, {
+    ...LIVE,
+    refreshInterval: 30_000,
+  });
+}
+
+export function usePredictions(id: string | null) {
+  return useSWR<ApiEnvelope<Prediction[]>>(id ? `/api/predictions?stop=${encodeURIComponent(id)}` : null, fetchJson, {
+    ...LIVE,
+    refreshInterval: 20_000,
+    errorRetryCount: 2,
+  });
+}
+
+export type RouteQuery = { from: string; to: string; closed: string[] };
+
+export function routeUrl(q: RouteQuery): string {
+  const p = new URLSearchParams({ from: q.from, to: q.to });
+  if (q.closed.length) p.set('closed', q.closed.join(','));
+  return `/api/route?${p.toString()}`;
+}
+
+export function useRoute(q: RouteQuery | null) {
+  return useSWR<ApiEnvelope<PlannedRoute>>(q ? routeUrl(q) : null, fetchJson, {
+    revalidateOnFocus: false,
+    keepPreviousData: true,
+    shouldRetryOnError: false,
+  });
+}
+
+export function useCrashLocations(q: string, sort: 'recorded' | 'model') {
+  const p = new URLSearchParams({ q, limit: '50', sort });
+  return useSWR<ApiEnvelope<CrashLocationsData>>(`/api/crash/locations?${p.toString()}`, fetchJson, {
+    ...STATIC,
+    keepPreviousData: true,
+  });
+}
+
+/** Local fallback for the crash list: read the static layer directly. */
+export function useCrashGeojson(enabled: boolean) {
+  return useSWR<GeoJSON.FeatureCollection>(enabled ? '/data/crash-risk.geojson' : null, fetchJson, STATIC);
+}
