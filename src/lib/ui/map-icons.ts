@@ -271,6 +271,22 @@ const ICONS: Record<string, Icon> = {
       [accessName(k) + '-out', equipment(k, true)],
     ]),
   ),
+  // MBTA lot with accessible spaces: blue square, white P and a small wheelchair.
+  'lm-parking': {
+    draw: (c) => {
+      square(c, BLUE, WHITE, 3);
+      c.fillStyle = WHITE;
+      c.font = 'bold 24px system-ui, sans-serif';
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.fillText('P', 19, 25);
+      c.save();
+      c.translate(26, 26);
+      c.scale(0.4, 0.4);
+      wheelchair(c, WHITE, 1);
+      c.restore();
+    },
+  },
   'lm-entrance': door(GREEN, false),
   'lm-entrance-no': door(GREY, true),
   'lm-fatal': {

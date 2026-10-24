@@ -78,9 +78,20 @@ type Props = {
   onSelectStation: (id: string) => void;
   /** Saved places from the profile (Home, Work, ...), offered as start and destination. */
   places?: Place[];
+  /** Start station handed over by park & ride (seq changes on every hand-over). */
+  presetFrom?: { id: string; seq: number } | null;
 };
 
-export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onSelectStation, places = [] }: Props) {
+export default function TripPlanner({
+  stations,
+  byId,
+  live,
+  onRoute,
+  onWalk,
+  onSelectStation,
+  places = [],
+  presetFrom,
+}: Props) {
   const ids = useId();
   const t = useT();
   const [from, setFrom] = useState('');
@@ -137,6 +148,16 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
     );
     onWalk?.(lines.length ? lines : null);
   }, [walkData, walk2Data, onWalk]);
+
+  // Park & ride: the car is parked at this station, so the trip starts there. Adjusting state while
+  // rendering (not in an effect) when the hand-over changes, as React recommends.
+  const [presetSeen, setPresetSeen] = useState(presetFrom?.seq);
+  if (presetFrom && presetFrom.seq !== presetSeen) {
+    setPresetSeen(presetFrom.seq);
+    setStartMode('station');
+    setPlace(null);
+    setFrom(presetFrom.id);
+  }
 
   const nameOf = (id: string) => byId.get(id)?.name ?? id;
 

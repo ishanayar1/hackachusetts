@@ -15,6 +15,7 @@ import {
   type StationsStatusData,
   type Vehicle,
 } from './api';
+import type { DriveResult, NearbyLot } from '@/lib/drive';
 import { walkUrl, type LatLon, type WalkResult } from './walk';
 
 const STATIC = { revalidateOnFocus: false, revalidateIfStale: false, revalidateOnReconnect: false, shouldRetryOnError: false };
@@ -41,6 +42,16 @@ export function usePlatformNames(enabled = true) {
     STATIC,
   );
   return data?.platforms;
+}
+
+/** Driving route plus MBTA lots with accessible spaces near the destination (GET /api/drive). */
+export function useDrive(from: LatLon | null, to: LatLon | null) {
+  const f = (p: LatLon) => `${p.lat.toFixed(6)},${p.lon.toFixed(6)}`;
+  return useSWR<ApiEnvelope<DriveResult & { parking: NearbyLot[] }>>(
+    from && to ? `/api/drive?from=${f(from)}&to=${f(to)}` : null,
+    fetchJson,
+    { revalidateOnFocus: false, revalidateIfStale: false, shouldRetryOnError: false },
+  );
 }
 
 /** Walking route between two points (server caches and falls back Valhalla -> OSRM -> straight line). */

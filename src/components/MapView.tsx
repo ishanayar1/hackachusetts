@@ -20,6 +20,10 @@ export type MapViewProps = {
   route: GeoJSON.FeatureCollection;
   /** Walking legs, drawn as a dashed line. */
   walk?: GeoJSON.FeatureCollection;
+  /** Car route, drawn as a solid dark line. */
+  drive?: GeoJSON.FeatureCollection;
+  /** MBTA lots with accessible spaces (Drive tab). */
+  parking?: GeoJSON.FeatureCollection;
   /** Highlighted safe bike route from the chatbot (null = none). */
   bikeRoute: GeoJSON.FeatureCollection | null;
   crashMode: CrashMode;
@@ -367,6 +371,30 @@ export default function MapView(props: MapViewProps) {
                   type="line"
                   layout={{ 'line-cap': 'round', 'line-join': 'round' }}
                   paint={{ 'line-color': ['get', 'color'], 'line-width': 6 }}
+                />
+              </Source>
+              {/* Car route: dark line on a white casing. */}
+              <Source id="drive" type="geojson" data={props.drive ?? EMPTY_FC}>
+                <Layer
+                  id="drive-casing"
+                  type="line"
+                  layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#ffffff', 'line-width': 9 }}
+                />
+                <Layer
+                  id="drive-line"
+                  type="line"
+                  layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#0f172a', 'line-width': 5 }}
+                />
+              </Source>
+              {/* MBTA lots with accessible spaces: blue square with P and a wheelchair. */}
+              <Source id="parking" type="geojson" data={props.parking ?? EMPTY_FC}>
+                <Layer
+                  id="parking-points"
+                  type="symbol"
+                  minzoom={10}
+                  layout={{ 'icon-image': 'lm-parking', 'icon-size': 0.9, 'icon-allow-overlap': true }}
                 />
               </Source>
               <Source id="walk" type="geojson" data={walk ?? EMPTY_FC}>

@@ -9,6 +9,7 @@ import type {
   FatalCrash,
   MapFeatureInfo,
   MapLayerToggles,
+  ParkingLot,
   Station,
   StationStatusRow,
 } from '@/lib/ui/api';
@@ -16,7 +17,7 @@ import type { CrashMode } from '@/lib/ui/format';
 import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeojson } from '@/lib/ui/geo';
 import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
 import { DEFAULT_CRASH_MODE, facilityTypeWord, formatClock, isPartial, routeName } from '@/lib/ui/format';
-import { startLayers, type Profile } from '@/lib/profile';
+import { defaultTab, startLayers, type Profile } from '@/lib/profile';
 import { useMapSkin } from '@/lib/ui/map-skins';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
 import Account from './Account';
@@ -28,6 +29,7 @@ import MapKey, { DEFAULT_LAYERS } from './MapKey';
 import type { FlyTarget } from './MapView';
 import MyStations from './MyStations';
 import ChatWidget from './ChatWidget';
+import DrivePlanner from './DrivePlanner';
 import StationDetails from './StationDetails';
 import Tabs from './Tabs';
 import TripPlanner from './TripPlanner';
@@ -173,7 +175,7 @@ function MapFeatureCard({
 export default function LastMileApp({ profile }: { profile: Profile }) {
   const { stations, byId, sorted, error: stationsError } = useStations();
   const status = useStationsStatus();
-  const [tab, setTab] = useState('trip');
+  const [tab, setTab] = useState<string>(defaultTab(profile));
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [selectedHex, setSelectedHex] = useState<CrashHex | null>(null);
   const [crashMode, setCrashMode] = useState<CrashMode>(DEFAULT_CRASH_MODE);
@@ -181,6 +183,9 @@ export default function LastMileApp({ profile }: { profile: Profile }) {
   const [bikeRoute, setBikeRoute] = useState<GeoJSON.FeatureCollection | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
   const [walkLines, setWalkLines] = useState<[number, number][][] | null>(null);
+  const [driveLine, setDriveLine] = useState<[number, number][] | null>(null);
+  /** Park & ride hands its station to the trip planner; seq makes the same station count again. */
+  const [presetFrom, setPresetFrom] = useState<{ id: string; seq: number } | null>(null);
   const mine = useMyStations();
   const [skin, setSkin] = useMapSkin();
   const [banner, setBanner] = useState<string[]>([]);
@@ -193,6 +198,27 @@ export default function LastMileApp({ profile }: { profile: Profile }) {
   const stationsFc = useMemo(() => stationsGeojson(stations, live), [stations, live]);
   const routeFc = useMemo(() => routeGeojson(legs ?? undefined, byId), [legs, byId]);
   const walkFc = useMemo(() => walkGeojson(walkLines), [walkLines]);
+  const driveFc = useMemo(() => walkGeojson(driveLine ? [driveLine] : null), [driveLine]);
+  // Stable: DrivePlanner calls it from an effect. Centers the map on the route's midpoint, like the bike route.
+  const showDrive = useCallback((c: [number, number][] | null) => {
+    setDriveLine(c);
+    const mid = c?.[Math.floor(c.length / 2)];
+    if (mid) setFlyTo((f) => ({ lng: mid[0], lat: mid[1], zoom: 12, seq: (f?.seq ?? 0) + 1 }));
+  }, []);
+  // MBTA lots with accessible spaces, on the map while the Drive tab is open.
+  const parking = useStaticFile<ParkingLot[]>('/data/parking.json', tab === 'drive');
+  const parkingFc = useMemo(
+    () =>
+      tab === 'drive'
+        ? pointsGeojson(
+            (parking.data ?? []).filter(
+              (l): l is ParkingLot & { lat: number; lon: number } =>
+                (l.accessibleSpaces ?? 0) > 0 && l.lat !== undefined && l.lon !== undefined,
+            ),
+          )
+        : undefined,
+    [parking.data, tab],
+  );
 
   // Optional map layers: each file / feed is fetched only once its layer is turned on.
   const [layers, setLayers] = useState<MapLayerToggles>(() => ({ ...DEFAULT_LAYERS, ...startLayers(profile) }));
@@ -452,8 +478,24 @@ export default function LastMileApp({ profile }: { profile: Profile }) {
                   live={live}
                   onRoute={setLegs}
                   onWalk={setWalkLines}
+                  presetFrom={presetFrom}
                   onSelectStation={selectStation}
                   places={profile.places}
+                />
+              ),
+            },
+            {
+              id: 'drive',
+              label: t('Drive'),
+              content: (
+                <DrivePlanner
+                  stations={sorted}
+                  places={profile.places}
+                  onDrive={showDrive}
+                  onPlanTrain={(id) => {
+                    setPresetFrom((p) => ({ id, seq: (p?.seq ?? 0) + 1 }));
+                    setTab('trip');
+                  }}
                 />
               ),
             },
@@ -477,6 +519,8 @@ export default function LastMileApp({ profile }: { profile: Profile }) {
           stations={stationsFc}
           route={routeFc}
           walk={walkFc}
+          drive={driveFc}
+          parking={parkingFc}
           bikeRoute={bikeRoute}
           crashMode={crashMode}
           selectedStationId={selectedStationId}

@@ -41,6 +41,7 @@ export interface WalkDeps {
 
 export const VALHALLA_URL = 'https://valhalla1.openstreetmap.de/route';
 export const OSRM_URL = 'https://routing.openstreetmap.de/routed-foot/route/v1/foot';
+export const OSRM_CAR_URL = 'https://routing.openstreetmap.de/routed-car/route/v1/driving';
 const USER_AGENT = 'LastMile hackathon app (accessible transit last-mile walking routes)';
 const TIMEOUT_MS = 6_000;
 const WHEELCHAIR_MPS = 1; // straight-line and OSRM time estimate
@@ -180,8 +181,14 @@ function osrmInstruction(s: OsrmStep): string {
   return `Continue${onto}`;
 }
 
-export async function fromOsrm(from: LatLon, to: LatLon, deps: WalkDeps = {}): Promise<WalkResult> {
-  const url = `${OSRM_URL}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson&steps=true`;
+export async function fromOsrm(
+  from: LatLon,
+  to: LatLon,
+  deps: WalkDeps = {},
+  profile: 'foot' | 'car' = 'foot',
+): Promise<WalkResult> {
+  const base = profile === 'car' ? OSRM_CAR_URL : OSRM_URL;
+  const url = `${base}/${from.lon},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson&steps=true`;
   const j = (await getJson(url, deps)) as OsrmResponse;
   const r = j.routes?.[0];
   const coordinates = r?.geometry?.coordinates;
@@ -192,10 +199,11 @@ export async function fromOsrm(from: LatLon, to: LatLon, deps: WalkDeps = {}): P
     source: 'osrm',
     distanceM,
     // OSRM foot assumes walking pace; use the slower wheelchair pace when it gives more time.
-    minutes: round1(Math.max(r.duration ?? 0, distanceM / WHEELCHAIR_MPS) / 60),
+    minutes: round1((profile === 'car' ? (r.duration ?? 0) : Math.max(r.duration ?? 0, distanceM / WHEELCHAIR_MPS)) / 60),
     coordinates,
     steps,
-    approximate: true,
+    // Foot routes ignore curb ramps and slopes; car routes follow real roads (time has no live traffic).
+    approximate: profile !== 'car',
   };
 }
 

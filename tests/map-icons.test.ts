@@ -26,7 +26,7 @@ describe('map icons', () => {
 
   it('every station state and point layer has a drawn icon', () => {
     expect(new Set(Object.values(STATION_ICON)).size).toBe(4);
-    for (const n of [...Object.values(STATION_ICON), 'lm-fatal', 'lm-danger', 'lm-ramp-poor', 'lm-ramp-lip', 'lm-ramp-both'])
+    for (const n of [...Object.values(STATION_ICON), 'lm-fatal', 'lm-danger', 'lm-ramp-poor', 'lm-ramp-lip', 'lm-ramp-both', 'lm-parking'])
       expect(MAP_ICON_NAMES).toContain(n);
   });
 
