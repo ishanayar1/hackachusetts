@@ -198,6 +198,122 @@ function onMissingImage(map: ReturnType<MapRef['getMap']>, id: string) {
   if (img) map.addImage(id, img, { pixelRatio: 2 });
 }
 
+/** Mockup elevator: white shaft with a green car at one of 8 heights (frames), or the red "OUT" sign. Drawn at 2x. */
+const ELEV_FRAMES = 8;
+function elevatorImage(frame: number | 'out'): ImageData | null {
+  const w = 48;
+  const h = frame === 'out' ? 80 : 60;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  if (frame === 'out') {
+    g.fillStyle = '#DA291C';
+    g.beginPath();
+    g.roundRect(0, 0, 48, 52, 14);
+    g.fill();
+    g.strokeStyle = '#ffffff';
+    g.lineWidth = 5;
+    g.lineCap = 'round';
+    g.beginPath();
+    g.moveTo(14, 16);
+    g.lineTo(34, 36);
+    g.moveTo(34, 16);
+    g.lineTo(14, 36);
+    g.stroke();
+    g.fillStyle = '#16181D';
+    g.beginPath();
+    g.roundRect(4, 54, 40, 24, 12);
+    g.fill();
+    g.fillStyle = '#ffffff';
+    g.font = '800 15px sans-serif';
+    g.textAlign = 'center';
+    g.fillText('OUT', 24, 71);
+    return g.getImageData(0, 0, w, h);
+  }
+  g.fillStyle = '#ffffff';
+  g.strokeStyle = '#16181D';
+  g.lineWidth = 4;
+  g.beginPath();
+  g.roundRect(6, 3, 36, 54, 12);
+  g.fill();
+  g.stroke();
+  g.strokeStyle = '#E6E8EC';
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(24, 6);
+  g.lineTo(24, 54);
+  g.stroke();
+  // car rides up and down the shaft
+  const y = 10 + (1 - Math.cos((frame / ELEV_FRAMES) * Math.PI * 2)) * 14;
+  g.fillStyle = '#0B7A3B';
+  g.beginPath();
+  g.roundRect(13, y, 22, 17, 5);
+  g.fill();
+  return g.getImageData(0, 0, w, h);
+}
+
+/** The shaft without its car, and the car alone (moved by a paint-only offset, which is cheap to animate). */
+function elevatorPart(part: 'shaft' | 'car'): ImageData | null {
+  const c = document.createElement('canvas');
+  c.width = 48;
+  c.height = 60;
+  const g = c.getContext('2d');
+  if (!g) return null;
+  if (part === 'car') {
+    g.fillStyle = '#0B7A3B';
+    g.beginPath();
+    g.roundRect(13, 10, 22, 17, 5);
+    g.fill();
+    return g.getImageData(0, 0, 48, 60);
+  }
+  g.fillStyle = '#ffffff';
+  g.strokeStyle = '#16181D';
+  g.lineWidth = 4;
+  g.beginPath();
+  g.roundRect(6, 3, 36, 54, 12);
+  g.fill();
+  g.stroke();
+  g.strokeStyle = '#E6E8EC';
+  g.lineWidth = 3;
+  g.beginPath();
+  g.moveTo(24, 6);
+  g.lineTo(24, 54);
+  g.stroke();
+  return g.getImageData(0, 0, 48, 60);
+}
+
+function addElevatorIcons(map: ReturnType<MapRef['getMap']>) {
+  for (const part of ['shaft', 'car'] as const) {
+    const id = `lm-elev-${part}`;
+    const img = map.hasImage(id) ? null : elevatorPart(part);
+    if (img) map.addImage(id, img, { pixelRatio: 2 });
+  }
+  const out = map.hasImage('lm-elev-out') ? null : elevatorImage('out');
+  if (out) map.addImage('lm-elev-out', out, { pixelRatio: 2 });
+}
+
+/** One elevator per station for the city view: a broken one if the station has any, else its first one. */
+function stationElevators(access: GeoJSON.FeatureCollection | undefined, closed: readonly string[]): GeoJSON.FeatureCollection {
+  const out = new globalThis.Map<string, GeoJSON.Feature>();
+  const closedSet = new Set(closed);
+  let ph = 0;
+  for (const f of access?.features ?? []) {
+    const p = f.properties ?? {};
+    if (p.kind !== 'ELEVATOR' || !p.stationId) continue;
+    const isOut = closedSet.has(String(p.id));
+    const prev = out.get(String(p.stationId));
+    if (prev && (prev.properties?.out || !isOut)) continue;
+    out.set(String(p.stationId), {
+      type: 'Feature',
+      properties: { id: p.id, stationId: p.stationId, out: isOut, ph: prev?.properties?.ph ?? ph++ % ELEV_FRAMES },
+      geometry: f.geometry,
+    });
+  }
+  return { type: 'FeatureCollection', features: [...out.values()] };
+}
+
 function addCatIcons(map: ReturnType<MapRef['getMap']>) {
   for (const [id, fill] of [['lm-cat-cream', '#F6E7C8'], ['lm-cat-tan', '#D9A066']] as const) {
     if (map.hasImage(id)) continue;
@@ -342,6 +458,7 @@ export default function MapView(props: MapViewProps) {
     if (map) {
       addMapIcons(map);
       addCatIcons(map);
+      addElevatorIcons(map);
       map.on('styleimagemissing', (e: { id: string }) => onMissingImage(map, e.id));
     }
     const styleLayers = map?.getStyle()?.layers ?? [];
@@ -395,34 +512,55 @@ export default function MapView(props: MapViewProps) {
 
   // Live trains glide to each new position instead of jumping.
   const shownTrains = useRef(new globalThis.Map<string, LngLat>());
+  // Buses (hundreds) get their own source and simply update each refresh; only trains glide.
+  const trainsFc = useMemo<GeoJSON.FeatureCollection>(
+    () => ({ type: 'FeatureCollection', features: (props.vehicles?.features ?? []).filter((f) => f.properties?.mode !== 'bus') }),
+    [props.vehicles],
+  );
+  const busesFc = useMemo<GeoJSON.FeatureCollection>(
+    () => ({ type: 'FeatureCollection', features: (props.vehicles?.features ?? []).filter((f) => f.properties?.mode === 'bus') }),
+    [props.vehicles],
+  );
+  // Every train and bus keeps moving: it travels from where it is drawn now to its latest live position over
+  // one refresh (15 s), so by the next update it arrives and carries straight on. Trains redraw ~30 times a
+  // second; the hundreds of buses ~6 times a second, which keeps the map smooth.
   useEffect(() => {
     const map = mapRef.current?.getMap();
-    const fc = layers.trains ? props.vehicles : undefined;
-    const src = loaded ? (map?.getSource('vehicles') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined) : undefined;
-    if (!fc || !src?.setData) return;
-    const from = shownTrains.current;
+    type Settable = { setData?: (d: GeoJSON.FeatureCollection) => void };
+    const tSrc = loaded ? (map?.getSource('vehicles') as Settable | undefined) : undefined;
+    const bSrc = loaded ? (map?.getSource('buses') as Settable | undefined) : undefined;
+    if (!layers.trains || !tSrc?.setData || !bSrc?.setData) return;
+    const from = new globalThis.Map(shownTrains.current);
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const TRAVEL_MS = 4_000;
     const t0 = performance.now();
     let raf = 0;
-    const frame = (now: number) => {
-      const k = reduce ? 1 : Math.min(1, (now - t0) / 1800);
-      const e = 1 - (1 - k) ** 3;
-      const next = new globalThis.Map<string, LngLat>();
-      const features = fc.features.map((f) => {
+    let lastTrain = -Infinity;
+    let lastBus = -Infinity;
+    const place = (fc: GeoJSON.FeatureCollection, k: number) =>
+      fc.features.map((f) => {
         const id = String(f.properties?.id ?? '');
         const to = (f.geometry as GeoJSON.Point).coordinates as LngLat;
         const a = from.get(id) ?? to;
-        const p: LngLat = [a[0] + (to[0] - a[0]) * e, a[1] + (to[1] - a[1]) * e];
-        next.set(id, p);
+        const p: LngLat = [a[0] + (to[0] - a[0]) * k, a[1] + (to[1] - a[1]) * k];
+        shownTrains.current.set(id, p);
         return { ...f, geometry: { type: 'Point' as const, coordinates: p } };
       });
-      src.setData!({ type: 'FeatureCollection', features });
-      shownTrains.current = next;
+    const frame = (now: number) => {
+      const k = reduce ? 1 : Math.min(1, (now - t0) / TRAVEL_MS);
+      if (now - lastTrain >= 100 || k === 1) {
+        tSrc.setData!({ type: 'FeatureCollection', features: place(trainsFc, k) });
+        lastTrain = now;
+      }
+      if (now - lastBus >= 1000 || k === 1) {
+        bSrc.setData!({ type: 'FeatureCollection', features: place(busesFc, k) });
+        lastBus = now;
+      }
       if (k < 1) raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => cancelAnimationFrame(raf);
-  }, [props.vehicles, layers.trains, loaded]);
+  }, [trainsFc, busesFc, layers.trains, loaded]);
 
   // A soft halo breathes around each train, and the cream cat walks the trip while the tan cat waits at the end.
   const startPt = useMemo(() => {
@@ -430,6 +568,10 @@ export default function MapView(props: MapViewProps) {
     return f ? ((f.geometry as GeoJSON.Point).coordinates as LngLat) : null;
   }, [props.places]);
   const path = useMemo(() => tripPath(startPt, props.walk, props.route), [startPt, props.walk, props.route]);
+  const elevFc = useMemo(
+    () => (layers.access ? stationElevators(props.access, closedIds) : EMPTY_FC),
+    [layers.access, props.access, closedIds],
+  );
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !loaded) return;
@@ -446,8 +588,13 @@ export default function MapView(props: MapViewProps) {
     cats?.setData?.(catFc(path[0] ?? null));
     if (reduce) return;
     let raf = 0;
+    let lastCat = -Infinity;
     const loop = path.length > 1 ? 14000 : 0;
     const frame = (now: number) => {
+      // Trains and buses bob gently all the time (paint-only, cheap), on top of gliding to each live position.
+      const bob = -Math.abs(Math.sin(now / 260)) * 3;
+      if (map.getLayer('vehicles')) map.setPaintProperty('vehicles', 'icon-translate', [0, bob]);
+      if (map.getLayer('vehicles-bus')) map.setPaintProperty('vehicles-bus', 'icon-translate', [0, -Math.abs(Math.sin(now / 300 + 1)) * 3]);
       if (layers.trains && map.getLayer('vehicles-halo')) {
         const p = (now % 1800) / 1800;
         map.setPaintProperty('vehicles-halo', 'circle-radius', 7 + p * 12);
@@ -458,6 +605,16 @@ export default function MapView(props: MapViewProps) {
         map.setPaintProperty('stations-alert', 'circle-radius', 8 + q * 14);
         map.setPaintProperty('stations-alert', 'circle-opacity', 0.45 * (1 - q));
       }
+      // City view: the green car rides up and down each elevator shaft (paint-only, so it is cheap every frame).
+      if (map.getLayer('elev-car')) {
+        const z = map.getZoom();
+        const scale = z <= 11 ? 0.8 : z >= 13.9 ? 1.05 : 0.8 + ((z - 11) / 2.9) * 0.25;
+        const dy = ((1 - Math.cos((now / 1800) * Math.PI * 2)) / 2) * 13 * scale;
+        map.setPaintProperty('elev-car', 'icon-translate', [0, dy]);
+        const q = (now % 1200) / 1200;
+        map.setPaintProperty('elev-city-pulse', 'circle-radius', 10 + q * 14);
+        map.setPaintProperty('elev-city-pulse', 'circle-opacity', 0.5 * (1 - q));
+      }
       // Street zoom: elevators ride gently up and down; broken ones pulse red.
       if (map.getZoom() >= 14 && map.getLayer('access-points')) {
         map.setPaintProperty('access-points', 'icon-translate', [0, -Math.abs(Math.sin(now / 600)) * 3]);
@@ -466,7 +623,10 @@ export default function MapView(props: MapViewProps) {
         map.setPaintProperty('access-broken-pulse', 'circle-opacity', 0.5 * (1 - q));
       }
       if (loop && cats?.setData) {
-        cats.setData(catFc(along(path, (now % loop) / loop)));
+        if (now - lastCat >= 80) {
+          cats.setData(catFc(along(path, (now % loop) / loop)));
+          lastCat = now;
+        }
         if (map.getLayer('cats')) map.setPaintProperty('cats', 'icon-translate', [0, -Math.abs(Math.sin(now / 140)) * 3]);
       }
       raf = requestAnimationFrame(frame);
@@ -581,7 +741,7 @@ export default function MapView(props: MapViewProps) {
                   type="symbol"
                   beforeId={firstSymbolId}
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                  filter={crashFilter(crashMode) as any}
+                  filter={(crashFilter(crashMode) ?? ['all']) as any}
                   layout={{
                     visibility: crashVisible ? 'visible' : 'none',
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -775,20 +935,12 @@ export default function MapView(props: MapViewProps) {
                 />
               </Source>
               {/* Live trains: dot in the line color with a white outline; an arrow shows direction from zoom 11. */}
-              <Source id="vehicles" type="geojson" data={(layers.trains && props.vehicles) || EMPTY_FC}>
-                <Layer
-                  id="vehicles-halo"
-                  type="circle"
-                  filter={['!=', ['get', 'mode'], 'bus']}
-                  layout={{ visibility: vis(layers.trains) }}
-                  paint={{ 'circle-radius': 10, 'circle-color': ['get', 'color'], 'circle-opacity': 0.25 }}
-                />
-                {/* Buses only from street zoom, so the city view stays clean. */}
+              {/* Buses only from street zoom, so the city view stays clean. */}
+              <Source id="buses" type="geojson" data={layers.trains ? busesFc : EMPTY_FC}>
                 <Layer
                   id="vehicles-bus"
                   type="symbol"
                   minzoom={12.5}
-                  filter={['==', ['get', 'mode'], 'bus']}
                   layout={{
                     visibility: vis(layers.trains),
                     'icon-image': ['get', 'vicon'],
@@ -796,6 +948,14 @@ export default function MapView(props: MapViewProps) {
                     'icon-allow-overlap': true,
                     'icon-ignore-placement': true,
                   }}
+                />
+              </Source>
+              <Source id="vehicles" type="geojson" data={layers.trains ? trainsFc : EMPTY_FC}>
+                <Layer
+                  id="vehicles-halo"
+                  type="circle"
+                  layout={{ visibility: vis(layers.trains) }}
+                  paint={{ 'circle-radius': 10, 'circle-color': ['get', 'color'], 'circle-opacity': 0.25 }}
                 />
                 <Layer
                   id="vehicles"
@@ -945,6 +1105,43 @@ export default function MapView(props: MapViewProps) {
               {/* Elevators, lifts, ramps (blue; escalators slate; red with a slash when out of service) and
                   station doors (green; grey with a slash when not step-free). From zoom 14 to keep the map clear.
                   Above stations so a broken elevator is never hidden under its station. */}
+              {/* City view (below street zoom): one mockup-style elevator per station, the car riding up and down;
+                  a broken one is a red "OUT" sign with a pulse. Street zoom shows every elevator and door instead. */}
+              <Source id="elevators" type="geojson" data={elevFc}>
+                <Layer
+                  id="elev-city-pulse"
+                  type="circle"
+                  minzoom={11}
+                  filter={['==', ['get', 'out'], true]}
+                  paint={{ 'circle-radius': 12, 'circle-color': '#DA291C', 'circle-opacity': 0.3, 'circle-translate': [-16, 14] }}
+                />
+                <Layer
+                  id="elev-city"
+                  type="symbol"
+                  minzoom={11}
+                  layout={{
+                    'icon-image': ['case', ['get', 'out'], 'lm-elev-out', 'lm-elev-shaft'],
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 0.8, 13.9, 1.05],
+                    'icon-offset': [-16, 14],
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true,
+                    'symbol-sort-key': ['case', ['get', 'out'], 1, 0],
+                  }}
+                />
+                <Layer
+                  id="elev-car"
+                  type="symbol"
+                  minzoom={11}
+                  filter={['!=', ['get', 'out'], true]}
+                  layout={{
+                    'icon-image': 'lm-elev-car',
+                    'icon-size': ['interpolate', ['linear'], ['zoom'], 11, 0.8, 13.9, 1.05],
+                    'icon-offset': [-16, 14],
+                    'icon-allow-overlap': true,
+                    'icon-ignore-placement': true,
+                  }}
+                />
+              </Source>
               <Source id="access" type="geojson" data={(layers.access && props.access) || EMPTY_FC}>
                 {/* Pulsing red ring under each out-of-service elevator, lift or ramp. */}
                 <Layer
@@ -959,6 +1156,8 @@ export default function MapView(props: MapViewProps) {
                   id="access-points"
                   type="symbol"
                   minzoom={14}
+                  // Elevators are drawn by the mockup-style elevator layer at every zoom.
+                  filter={['!=', ['get', 'kind'], 'ELEVATOR']}
                   layout={{
                     visibility: vis(layers.access),
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
