@@ -136,21 +136,61 @@ async function main() {
   const typical = allPatterns.filter((p) => p.route_pattern_typicality === '1');
   const repTrips = new Set([...canonical, ...typical].map((p) => p.representative_trip_id));
 
+  // The "canonical-*" representative trips carry placeholder times (exactly 1 minute per stop),
+  // so ride times come from a sample of real scheduled trips on the same canonical patterns.
+  const SAMPLE_PER_PATTERN = 30;
+  const canonicalIds = new Set(canonical.map((p) => p.route_pattern_id));
+  const sampleCount = new Map<string, number>();
+  const sampleTrips = new Set<string>();
+
   const tripShape = new Map<string, string>();
   for (const t of csvFiltered(text('trips.txt'), new Set(SUBWAY))) {
     if (repTrips.has(t.trip_id)) tripShape.set(t.trip_id, t.shape_id);
+    if (canonicalIds.has(t.route_pattern_id) && !t.trip_id.startsWith('canonical-')) {
+      const n = sampleCount.get(t.route_pattern_id) ?? 0;
+      if (n < SAMPLE_PER_PATTERN) {
+        sampleCount.set(t.route_pattern_id, n + 1);
+        sampleTrips.add(t.trip_id);
+      }
+    }
   }
 
-  // stop_times is ~130 MB: scan lines and parse only the representative trips.
+  // stop_times is ~130 MB: scan lines and parse only the representative and sampled trips.
   const tripStops = new Map<string, { stop: string; seq: number; t: number | null }[]>();
   // stop_times has trip_id first, so filter on it directly.
-  for (const st of csvFiltered(text('stop_times.txt'), repTrips)) {
+  for (const st of csvFiltered(text('stop_times.txt'), new Set([...repTrips, ...sampleTrips]))) {
     const time = st.departure_time || st.arrival_time;
     const list = tripStops.get(st.trip_id) ?? [];
     list.push({ stop: st.stop_id, seq: Number(st.stop_sequence), t: time ? secs(time) : null });
     tripStops.set(st.trip_id, list);
   }
   for (const list of tripStops.values()) list.sort((a, b) => a.seq - b.seq);
+
+  // Median scheduled minutes between consecutive platforms, from the real sampled trips.
+  const pairSamples = new Map<string, number[]>();
+  for (const id of sampleTrips) {
+    const list = tripStops.get(id) ?? [];
+    for (let i = 1; i < list.length; i++) {
+      const a = list[i - 1];
+      const b = list[i];
+      if (a.t === null || b.t === null) continue;
+      const min = (b.t - a.t) / 60;
+      if (min <= 0 || min > 30) continue;
+      // Keyed by platform pair and by station pair: some real trips stop at different platforms.
+      for (const key of [`${a.stop}>${b.stop}`, `${stationOf(a.stop)}>${stationOf(b.stop)}`]) {
+        const arr = pairSamples.get(key) ?? [];
+        arr.push(min);
+        pairSamples.set(key, arr);
+      }
+    }
+  }
+  const medianMinutes = (key: string): number | null => {
+    const arr = pairSamples.get(key);
+    if (!arr?.length) return null;
+    const s = [...arr].sort((x, y) => x - y);
+    const mid = Math.floor(s.length / 2);
+    return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+  };
 
   // ---------- platforms and rides ----------
   const platforms: Record<string, Platform> = {};
@@ -192,7 +232,9 @@ async function main() {
       const key = `${a.stop}>${b.stop}>${route}`;
       if (rideKeys.has(key)) continue;
       rideKeys.add(key);
-      const raw = a.t !== null && b.t !== null ? (b.t - a.t) / 60 : 2;
+      // Real-trip median first; the representative trip's own times are placeholders, so fall back to 2 min.
+      const raw =
+        medianMinutes(`${a.stop}>${b.stop}`) ?? medianMinutes(`${stationOf(a.stop)}>${stationOf(b.stop)}`) ?? 2;
       rides.push({ from: a.stop, to: b.stop, route, directionId: dir, minutes: Math.max(0.5, Math.round(raw * 10) / 10) });
     }
   }
