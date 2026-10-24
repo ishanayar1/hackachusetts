@@ -2,17 +2,26 @@
 // Main screen: panel (tabs + details) and the map. All map content is also available as text in the panel.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Leg } from '@/lib/router';
-import type { CrashHex, StationStatusRow } from '@/lib/ui/api';
+import type {
+  CrashHex,
+  CurbRamp,
+  DangerReport,
+  FatalCrash,
+  MapFeatureInfo,
+  MapLayerToggles,
+  Station,
+  StationStatusRow,
+} from '@/lib/ui/api';
 import type { CrashMode } from '@/lib/ui/format';
-import { routeGeojson, stationsGeojson, walkGeojson } from '@/lib/ui/geo';
-import { useStations, useStationsStatus } from '@/lib/ui/hooks';
-import { isPartial } from '@/lib/ui/format';
+import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeojson } from '@/lib/ui/geo';
+import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
+import { formatClock, isPartial, routeName } from '@/lib/ui/format';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
 import BrokenNow from './BrokenNow';
 import CrashSpots from './CrashSpots';
 import HexDetails from './HexDetails';
 import MapClient from './MapClient';
-import MapKey from './MapKey';
+import MapKey, { DEFAULT_LAYERS } from './MapKey';
 import type { FlyTarget } from './MapView';
 import MyStations from './MyStations';
 import ChatWidget from './ChatWidget';
@@ -20,6 +29,120 @@ import StationDetails from './StationDetails';
 import Tabs from './Tabs';
 import TripPlanner from './TripPlanner';
 import { btn, Notice, SourceBadge, StarButton } from './ui';
+import LanguageSwitcher from './LanguageSwitcher';
+import { useT } from '@/lib/i18n';
+
+const n = (x: number) => x.toLocaleString('en-US');
+
+function countBy<T>(rows: readonly T[], key: (r: T) => string): [string, number][] {
+  const m = new Map<string, number>();
+  for (const r of rows) m.set(key(r), (m.get(key(r)) ?? 0) + 1);
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+const TRAIN_STATUS: Record<string, string> = {
+  STOPPED_AT: 'Stopped at',
+  INCOMING_AT: 'Arriving at',
+  IN_TRANSIT_TO: 'On the way to',
+};
+const FATAL_WHO: Record<string, string> = {
+  pedestrian: 'a person walking (pedestrian)',
+  bicyclist: 'a person on a bike',
+  'motor vehicle': 'a person in a motor vehicle',
+};
+const REPORTER: Record<string, string> = {
+  walking: 'someone walking',
+  biking: 'someone biking',
+  driving: 'someone driving',
+  'assistive device': 'someone using an assistive device',
+};
+const RAMP_TEXT: Record<string, string> = {
+  'poor condition': 'Poor condition',
+  'lip at edge': 'Lip at the edge (a bump between the ramp and the street)',
+  'poor condition, lip at edge': 'Poor condition and a lip at the edge',
+};
+const pct = (v: number | null) => (v === null ? 'not available' : `${v}%`);
+
+/** Text for whatever was tapped on an optional map layer (everything on the map also exists as text here). */
+function MapFeatureCard({
+  info,
+  byId,
+  onClose,
+}: {
+  info: MapFeatureInfo;
+  byId: Map<string, Station>;
+  onClose: () => void;
+}) {
+  const t = useT();
+  const tx = (s: string | undefined, fallback: string) => (s === undefined ? fallback : t(s));
+  const tpct = (v: number | null) => (v === null ? t('not available') : pct(v));
+  let title = '';
+  let rows: [string, string][] = [];
+  let source = '';
+  if (info.kind === 'train') {
+    title = info.headsign
+      ? t('{route} train to {headsign}', { route: routeName(info.routeId), headsign: info.headsign })
+      : t('{route} train', { route: routeName(info.routeId) });
+    const st = info.stationId ? (byId.get(info.stationId)?.name ?? info.stationId) : null;
+    rows = [
+      ...(st ? ([[t(TRAIN_STATUS[info.status] ?? 'Near'), st]] as [string, string][]) : []),
+      [t('Position updated'), formatClock(info.updatedAt) || info.updatedAt],
+    ];
+    source = t('MBTA live vehicle positions, updated every 15 s.');
+  } else if (info.kind === 'fatal') {
+    title = t('Fatal crash (recorded)');
+    rows = [
+      [t('Date'), info.date],
+      [t('Person killed'), tx(FATAL_WHO[info.mode], info.mode)],
+      [t('Place'), info.label],
+    ];
+    source = t('Boston Vision Zero fatality records, 2015 to 2026.');
+  } else if (info.kind === 'danger') {
+    title = t('Spot residents reported as dangerous');
+    rows = [
+      [t('Concern'), info.concern],
+      [t('Reported'), info.date],
+      [t('Reported by'), t(REPORTER[info.mode] ?? 'not stated')],
+    ];
+    source = t('Boston Vision Zero resident reports. Not verified crashes.');
+  } else if (info.kind === 'ramp') {
+    title = t('Curb ramp');
+    rows = [
+      [t('Condition'), tx(RAMP_TEXT[info.condition], info.condition)],
+      [t('Ramp id'), info.id],
+    ];
+    source = t('City of Boston curb ramp inventory.');
+  } else {
+    title = t('Environmental-justice neighborhood ({place})', { place: info.municipality || t('block group') });
+    rows = [
+      [t('People'), n(info.population)],
+      [t('Limited English households'), tpct(info.limitedEnglishPct)],
+      [t('Minority residents'), tpct(info.pctMinority)],
+      [t('Median household income'), info.medianIncome === null ? t('not available') : `$${n(info.medianIncome)}`],
+      [t('Criteria'), info.criteria],
+    ];
+    source = t('MassGIS environmental-justice block group {id}.', { id: info.geoid });
+  }
+  return (
+    <section aria-label={t('Selected map item')} className="rounded-md border border-slate-400 bg-white p-3 text-sm">
+      <div className="flex items-start justify-between gap-2">
+        <h2 className="font-bold text-slate-900">{title}</h2>
+        <button type="button" className={btn} onClick={onClose}>
+          {t('Close')}
+        </button>
+      </div>
+      <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1">
+        {rows.map(([k, v]) => (
+          <div key={k} className="contents">
+            <dt className="font-semibold">{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-1 text-xs text-slate-700">{source}</p>
+    </section>
+  );
+}
 
 export default function LastMileApp() {
   const { stations, byId, sorted, error: stationsError } = useStations();
@@ -43,6 +166,85 @@ export default function LastMileApp() {
   const stationsFc = useMemo(() => stationsGeojson(stations, live), [stations, live]);
   const routeFc = useMemo(() => routeGeojson(legs ?? undefined, byId), [legs, byId]);
   const walkFc = useMemo(() => walkGeojson(walkLines), [walkLines]);
+
+  // Optional map layers: each file / feed is fetched only once its layer is turned on.
+  const [layers, setLayers] = useState<MapLayerToggles>(DEFAULT_LAYERS);
+  const [feature, setFeature] = useState<MapFeatureInfo | null>(null);
+  const vehicles = useVehicles(layers.trains);
+  const fatal = useStaticFile<FatalCrash[]>('/data/fatalities.json', layers.fatal);
+  const danger = useStaticFile<DangerReport[]>('/data/safety-concerns.json', layers.danger);
+  const ramps = useStaticFile<CurbRamp[]>('/data/ramps.json', layers.ramps);
+  const equity = useStaticFile<GeoJSON.FeatureCollection>('/data/ej.geojson', layers.equity);
+  const vehiclesFc = useMemo(() => vehiclesGeojson(vehicles.data?.data), [vehicles.data]);
+  const fatalFc = useMemo(() => pointsGeojson(fatal.data), [fatal.data]);
+  const dangerFc = useMemo(() => pointsGeojson(danger.data), [danger.data]);
+  const rampsFc = useMemo(() => pointsGeojson(ramps.data), [ramps.data]);
+
+  const t = useT();
+  const en = t.lang === 'en';
+  const layerSummary = useMemo(() => {
+    const s: Partial<Record<keyof MapLayerToggles, string>> = {};
+    const fail = t('Could not load this layer. Reload the page to try again.');
+    const loading = t('Loading…');
+    const v = vehicles.data?.data.filter((x) => !x.stale);
+    const demo = vehicles.data?.source === 'demo';
+    s.trains = v
+      ? (en
+          ? `${v.length} trains shown${demo ? ' (demo snapshot, not live)' : ''}: `
+          : `${t('Trains shown: {n}', { n: v.length })}${demo ? ` (${t('demo snapshot, not live')})` : ''}. `) +
+        countBy(v, (x) => routeName(x.routeId))
+          .map(([k, c]) => `${k} ${c}`)
+          .join(', ') +
+        (vehicles.data?.fetchedAt
+          ? en
+            ? `. Updated ${formatClock(vehicles.data.fetchedAt)}.`
+            : `. ${t('Updated {time}.', { time: formatClock(vehicles.data.fetchedAt) })}`
+          : '.')
+      : vehicles.error
+        ? t('Live train positions are not available right now.')
+        : t('Loading trains…');
+    if (fatal.data) {
+      const newest = [...fatal.data].sort((a, b) => b.date.localeCompare(a.date))[0];
+      s.fatal =
+        (en ? `${n(fatal.data.length)} recorded fatal crashes: ` : `${t('Recorded fatal crashes: {n}', { n: n(fatal.data.length) })}. `) +
+        countBy(fatal.data, (x) => x.mode)
+          .map(([k, c]) => `${en ? k : t(k)} ${c}`)
+          .join(', ') +
+        (newest
+          ? en
+            ? `. Most recent: ${newest.date}, ${newest.label}.`
+            : `. ${t('Most recent: {date}, {place}.', { date: newest.date, place: newest.label })}`
+          : '.');
+    } else s.fatal = fatal.error ? fail : loading;
+    if (danger.data)
+      s.danger =
+        (en
+          ? `${n(danger.data.length)} resident reports. Most common concerns: `
+          : `${t('Resident reports: {n}. Most common concerns:', { n: n(danger.data.length) })} `) +
+        countBy(danger.data, (x) => x.concern)
+          .slice(0, 3)
+          .map(([k, c]) => `${k} (${c})`)
+          .join(', ') +
+        '.';
+    else s.danger = danger.error ? fail : loading;
+    if (equity.data) {
+      const towns = countBy(equity.data.features, (f) => String(f.properties?.municipality ?? ''));
+      const list = towns.map(([k, c]) => `${k} ${c}`).join(', ');
+      s.equity = en
+        ? `${n(equity.data.features.length)} block groups in ${towns.length} towns near subway stations: ${list}.`
+        : `${t('Block groups near subway stations: {n} in {towns} towns:', { n: n(equity.data.features.length), towns: towns.length })} ${list}.`;
+    } else s.equity = equity.error ? fail : loading;
+    if (ramps.data) {
+      const c = Object.fromEntries(countBy(ramps.data, (x) => x.condition));
+      const poor = n(c['poor condition'] ?? 0);
+      const lip = n(c['lip at edge'] ?? 0);
+      const both = n(c['poor condition, lip at edge'] ?? 0);
+      s.ramps = en
+        ? `${n(ramps.data.length)} ramps: ${poor} poor condition, ${lip} lip at the edge, ${both} both.`
+        : t('Ramps: {n}. Poor condition: {poor}. Lip at the edge: {lip}. Both: {both}.', { n: n(ramps.data.length), poor, lip, both });
+    } else s.ramps = ramps.error ? fail : loading;
+    return s;
+  }, [t, en, vehicles.data, vehicles.error, fatal.data, fatal.error, danger.data, danger.error, equity.data, equity.error, ramps.data, ramps.error]);
 
   // Banner when a saved station loses step-free access (fully or for one platform) between two refreshes.
   const statusRows = status.data?.data.stations;
@@ -78,14 +280,20 @@ export default function LastMileApp() {
   return (
     <div className="app-shell bg-slate-50 text-slate-900">
       <header className="app-header border-b border-slate-300 bg-white px-4 py-2">
-        <h1 className="text-xl font-extrabold tracking-tight text-slate-900">LastMile</h1>
-        <p className="text-sm text-slate-700">Step-free MBTA trips</p>
+        <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+          <div className="min-w-0 flex-1 basis-40">
+            <h1 className="text-xl font-extrabold tracking-tight text-slate-900">LastMile</h1>
+            <p className="text-sm text-slate-700">{t('Step-free MBTA trips')}</p>
+          </div>
+          <LanguageSwitcher />
+        </div>
+        {!en && <p className="text-xs text-slate-700">{t('MBTA alert text is shown in English.')}</p>}
       </header>
 
-      <main className="app-panel space-y-3 px-4 py-3" aria-label="Trip tools">
-        {stationsError && <Notice tone="error">Station list could not load. Reload the page to try again.</Notice>}
+      <main className="app-panel space-y-3 px-4 py-3" aria-label={t('Trip tools')}>
+        {stationsError && <Notice tone="error">{t('Station list could not load. Reload the page to try again.')}</Notice>}
         {status.error && !status.data && (
-          <Notice>Live step-free status is not available right now. Stations show their usual accessibility.</Notice>
+          <Notice>{t('Live step-free status is not available right now. Stations show their usual accessibility.')}</Notice>
         )}
         {status.data && <SourceBadge source={status.data.source} fetchedAt={status.data.fetchedAt} />}
         <div role="status" aria-live="polite">
@@ -93,18 +301,21 @@ export default function LastMileApp() {
             <div className="rounded-md border-2 border-red-800 bg-red-50 p-3 text-slate-900">
               <p className="font-bold">
                 <span aria-hidden="true">✕ </span>
-                {banner.map((id) => byId.get(id)?.name ?? id).join(', ')}{' '}
-                {banner.length === 1 ? 'is' : 'are'} no longer fully step-free (
-                {banner.length === 1 ? 'one of your saved stations' : 'your saved stations'}).
+                {t(
+                  banner.length === 1
+                    ? '{names} is no longer fully step-free (one of your saved stations).'
+                    : '{names} are no longer fully step-free (your saved stations).',
+                  { names: banner.map((id) => byId.get(id)?.name ?? id).join(', ') },
+                )}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {banner.map((id) => (
                   <button key={id} type="button" className={btn} onClick={() => selectStation(id)}>
-                    See {byId.get(id)?.name ?? id}
+                    {t('See {name}', { name: byId.get(id)?.name ?? id })}
                   </button>
                 ))}
                 <button type="button" className={btn} onClick={() => setBanner([])}>
-                  Dismiss
+                  {t('Dismiss')}
                 </button>
               </div>
             </div>
@@ -124,16 +335,18 @@ export default function LastMileApp() {
           <HexDetails hex={selectedHex} showModel={crashMode === 'model'} onClose={() => setSelectedHex(null)} />
         )}
 
-        <MapKey mode={crashMode} onMode={setCrashMode} />
+        {feature && <MapFeatureCard info={feature} byId={byId} onClose={() => setFeature(null)} />}
+
+        <MapKey mode={crashMode} onMode={setCrashMode} layers={layers} onLayers={setLayers} summary={layerSummary} />
 
         <Tabs
-          label="LastMile sections"
+          label={t('LastMile sections')}
           active={tab}
           onChange={setTab}
           tabs={[
             {
               id: 'broken',
-              label: 'Broken now',
+              label: t('Broken now'),
               content: (
                 <div className="space-y-4">
                   <MyStations
@@ -146,7 +359,7 @@ export default function LastMileApp() {
                   {blockedNow.length > 0 && (
                     <section aria-labelledby="blocked-h" className="rounded-md border border-red-800 bg-red-50 p-3">
                       <h2 id="blocked-h" className="font-bold text-slate-900">
-                        <span aria-hidden="true">✕ </span>Stations with step-free access blocked by broken equipment
+                        <span aria-hidden="true">✕ </span>{t('Stations with step-free access blocked by broken equipment')}
                       </h2>
                       <ul className="mt-1 flex flex-wrap gap-2">
                         {blockedNow.map((s) => (
@@ -157,7 +370,7 @@ export default function LastMileApp() {
                               className="min-h-11 rounded-md border border-red-800 bg-white px-3 text-sm font-semibold text-red-900 hover:bg-red-100"
                             >
                               {s.name}
-                              {isPartial(s) ? ' (partly step-free)' : ' (not step-free)'}
+                              {` (${t(isPartial(s) ? 'partly step-free' : 'not step-free')})`}
                             </button>
                             <StarButton saved={mine.has(s.id)} name={s.name} onToggle={() => mine.toggle(s.id)} />
                           </li>
@@ -171,7 +384,7 @@ export default function LastMileApp() {
             },
             {
               id: 'trip',
-              label: 'Plan a trip',
+              label: t('Plan a trip'),
               content: (
                 <TripPlanner
                   stations={sorted}
@@ -185,19 +398,19 @@ export default function LastMileApp() {
             },
             {
               id: 'crash',
-              label: 'Crash spots',
+              label: t('Crash spots'),
               content: <CrashSpots selectedHex={selectedHex?.site ?? null} onSelectHex={selectHexFromList} />,
             },
           ]}
         />
 
         <footer className="border-t border-slate-300 pt-3 text-xs text-slate-700">
-          <p className="font-semibold text-slate-900">Not official MBTA information. Confirm before you travel.</p>
+          <p className="font-semibold text-slate-900">{t('Not official MBTA information. Confirm before you travel.')}</p>
           <p className="mt-1">© OpenStreetMap contributors · OpenFreeMap · MBTA</p>
         </footer>
       </main>
 
-      <div className="app-map" role="region" aria-label="Map of subway stations and recorded crash intersections">
+      <div className="app-map" role="region" aria-label={t('Map of subway stations and recorded crash intersections')}>
         <MapClient
           stations={stationsFc}
           route={routeFc}
@@ -209,6 +422,13 @@ export default function LastMileApp() {
           flyTo={flyTo}
           onSelectStation={selectStation}
           onSelectHex={selectHexFromMap}
+          layers={layers}
+          vehicles={vehiclesFc}
+          fatal={fatalFc}
+          danger={dangerFc}
+          ramps={rampsFc}
+          equity={equity.data}
+          onSelectFeature={setFeature}
         />
       </div>
 
