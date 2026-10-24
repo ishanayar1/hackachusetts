@@ -20,6 +20,8 @@ export type MapViewProps = {
   route: GeoJSON.FeatureCollection;
   /** Walking legs, drawn as a dashed line. */
   walk?: GeoJSON.FeatureCollection;
+  /** Highlighted safe bike route from the chatbot (null = none). */
+  bikeRoute: GeoJSON.FeatureCollection | null;
   crashMode: CrashMode;
   selectedStationId: string | null;
   selectedHex: string | null;
@@ -49,7 +51,8 @@ const CRASH_SELECTED_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 6.5, 14,
 setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).href);
 
 export default function MapView(props: MapViewProps) {
-  const { stations, route, walk, crashMode, selectedStationId, selectedHex, flyTo, onSelectStation, onSelectHex } = props;
+  const { stations, route, walk, bikeRoute, crashMode, selectedStationId, selectedHex, flyTo, onSelectStation, onSelectHex } =
+    props;
   const mapRef = useRef<MapRef>(null);
   const [styleIdx, setStyleIdx] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -209,6 +212,51 @@ export default function MapView(props: MapViewProps) {
                   type="line"
                   layout={{ 'line-cap': 'butt', 'line-join': 'round' }}
                   paint={{ 'line-color': '#111827', 'line-width': 4, 'line-dasharray': [2, 1.5] }}
+                />
+              </Source>
+              {/* Highlighted safe bike route from the chatbot. */}
+              <Source id="bike-route" type="geojson" data={bikeRoute ?? EMPTY_FC}>
+                <Layer
+                  id="bike-route-casing"
+                  type="line"
+                  layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#064e3b', 'line-width': 10, 'line-opacity': 0.9 }}
+                />
+                <Layer
+                  id="bike-route-line"
+                  type="line"
+                  layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#22c55e', 'line-width': 5 }}
+                />
+                {/* Start: green dot. */}
+                <Layer
+                  id="bike-route-start"
+                  type="circle"
+                  filter={['==', ['get', 'role'], 'start']}
+                  paint={{
+                    'circle-radius': 7,
+                    'circle-color': '#22c55e',
+                    'circle-stroke-color': '#064e3b',
+                    'circle-stroke-width': 3,
+                  }}
+                />
+                {/* End: red destination marker (font-independent red ring + dot). */}
+                <Layer
+                  id="bike-route-end-ring"
+                  type="circle"
+                  filter={['==', ['get', 'role'], 'end']}
+                  paint={{
+                    'circle-radius': 9,
+                    'circle-color': '#dc2626',
+                    'circle-stroke-color': '#ffffff',
+                    'circle-stroke-width': 3,
+                  }}
+                />
+                <Layer
+                  id="bike-route-end-dot"
+                  type="circle"
+                  filter={['==', ['get', 'role'], 'end']}
+                  paint={{ 'circle-radius': 3, 'circle-color': '#ffffff' }}
                 />
               </Source>
               <Source id="stations" type="geojson" data={stations}>

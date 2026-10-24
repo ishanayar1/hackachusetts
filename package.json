@@ -25,6 +25,7 @@
   "devDependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@tailwindcss/turbopack": "^4",
+    "@types/geojson": "^7946.0.16",
     "@types/node": "^24.19.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",

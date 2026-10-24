@@ -15,6 +15,7 @@ import MapClient from './MapClient';
 import MapKey from './MapKey';
 import type { FlyTarget } from './MapView';
 import MyStations from './MyStations';
+import ChatWidget from './ChatWidget';
 import StationDetails from './StationDetails';
 import Tabs from './Tabs';
 import TripPlanner from './TripPlanner';
@@ -28,6 +29,7 @@ export default function LastMileApp() {
   const [selectedHex, setSelectedHex] = useState<CrashHex | null>(null);
   const [crashMode, setCrashMode] = useState<CrashMode>('recorded');
   const [legs, setLegs] = useState<Leg[] | null>(null);
+  const [bikeRoute, setBikeRoute] = useState<GeoJSON.FeatureCollection | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
   const [walkLines, setWalkLines] = useState<[number, number][][] | null>(null);
   const mine = useMyStations();
@@ -200,6 +202,7 @@ export default function LastMileApp() {
           stations={stationsFc}
           route={routeFc}
           walk={walkFc}
+          bikeRoute={bikeRoute}
           crashMode={crashMode}
           selectedStationId={selectedStationId}
           selectedHex={selectedHex?.site ?? null}
@@ -208,6 +211,26 @@ export default function LastMileApp() {
           onSelectHex={selectHexFromMap}
         />
       </div>
+
+      <ChatWidget
+        onRoute={(r) => {
+          if (!r) {
+            setBikeRoute(null);
+            return;
+          }
+          setBikeRoute({
+            type: 'FeatureCollection',
+            features: [
+              { type: 'Feature', properties: { role: 'line' }, geometry: { type: 'LineString', coordinates: r.coords } },
+              { type: 'Feature', properties: { role: 'start' }, geometry: { type: 'Point', coordinates: [r.from.lng, r.from.lat] } },
+              { type: 'Feature', properties: { role: 'end' }, geometry: { type: 'Point', coordinates: [r.to.lng, r.to.lat] } },
+            ],
+          });
+          // Center the map on the route's midpoint.
+          const mid = r.coords[Math.floor(r.coords.length / 2)];
+          if (mid) setFlyTo((f) => ({ lng: mid[0], lat: mid[1], zoom: 13.5, seq: (f?.seq ?? 0) + 1 }));
+        }}
+      />
     </div>
   );
 }
