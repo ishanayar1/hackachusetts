@@ -114,7 +114,7 @@ function compass(a: LatLon, b: LatLon): string {
 const round1 = (n: number) => Math.round(n * 10) / 10;
 
 // ---------- upstreams ----------
-async function getJson(url: string, deps: WalkDeps): Promise<unknown> {
+export async function getJson(url: string, deps: WalkDeps): Promise<unknown> {
   const f: FetchLike = deps.fetch ?? (globalThis.fetch as unknown as FetchLike);
   const res = await f(url, {
     headers: { 'User-Agent': USER_AGENT, Accept: 'application/json' },
