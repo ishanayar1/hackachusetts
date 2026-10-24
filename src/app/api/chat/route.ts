@@ -8,6 +8,81 @@ import { connection } from 'next/server';
 import type { CrashSpot } from '@/lib/crash';
 import { getCrashSpots } from '@/lib/server/crash-data';
 import { riskExclusionPolygons, scorePath, type RiskScore } from '@/lib/safe-route';
+// Step-free routing: reuse the existing router service + static data.
+import { getAlertsOrDemo, parseClosedParam, planWithClosures } from '@/lib/lastmile-service';
+import { getParentOf, loadDemoAlerts } from '@/lib/server/mbta';
+import { getStaticData } from '@/lib/server/static-data';
+
+// ---------------------------------------------------------------- step-free intent
+// Rough heuristic: does the user want a STEP-FREE TRAIN trip (wheelchair / no stairs),
+// as opposed to the safest bike/walk route? Keywords only — good enough for a demo.
+const STEP_FREE_RE = /\b(step[\s-]?free|wheelchair|accessible|no stairs|elevator|step free)\b/i;
+
+/** Match a free-text place to a subway station id by name (case-insensitive, substring). */
+function matchStation(place: string, stations: { id: string; name: string }[]): { id: string; name: string } | null {
+  const q = place.trim().toLowerCase();
+  if (!q) return null;
+  // Exact name first, then startsWith, then substring — the most specific win.
+  return (
+    stations.find((s) => s.name.toLowerCase() === q) ??
+    stations.find((s) => s.name.toLowerCase().startsWith(q)) ??
+    stations.find((s) => s.name.toLowerCase().includes(q)) ??
+    null
+  );
+}
+
+/** Build a plain-text reply for a step-free train route. No LLM needed. */
+async function stepFreeReply(message: string, origin: string): Promise<Response | null> {
+  if (!STEP_FREE_RE.test(message)) return null; // not a step-free request — let the bike flow handle it
+
+  const places = parseFromTo(message.replace(STEP_FREE_RE, ' '));
+  if (!places?.from || !places?.to) {
+    return Response.json({
+      ok: false,
+      reply: 'For a step-free trip, tell me both stations, e.g. "step-free from Alewife to Downtown Crossing".',
+    });
+  }
+
+  let data;
+  try {
+    data = getStaticData();
+  } catch {
+    return Response.json({ ok: false, reply: 'Station data is not available right now. Try again in a moment.' });
+  }
+
+  const fromStation = matchStation(places.from, data.stations);
+  const toStation = matchStation(places.to, data.stations);
+  if (!fromStation || !toStation) {
+    const missing = !fromStation ? places.from : places.to;
+    return Response.json({ ok: false, reply: `I couldn't find a subway station matching "${missing}". Try the exact station name.` });
+  }
+
+  try {
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(origin));
+    const plan = planWithClosures(data, fromStation.id, toStation.id, live.closedFacilityIds, parseClosedParam(null) ?? []);
+    if (!plan.ok) {
+      const why =
+        plan.reason === 'origin-not-step-free'
+          ? `${fromStation.name} is not step-free right now (broken equipment).`
+          : plan.reason === 'destination-not-step-free'
+            ? `${toStation.name} is not step-free right now (broken equipment).`
+            : 'No step-free route is available between those stations right now.';
+      return Response.json({ ok: false, reply: `♿ ${why}`, stepFree: true });
+    }
+    const transfers = plan.transfers === 0 ? 'no changes' : `${plan.transfers} change${plan.transfers > 1 ? 's' : ''}`;
+    const approx = plan.approximate ? ' Times are approximate, from the schedule.' : '';
+    return Response.json({
+      ok: true,
+      stepFree: true,
+      reply: `♿ Step-free route from ${fromStation.name} to ${toStation.name}: about ${plan.minutes} minutes on the train, ${transfers}.${approx}`,
+      plan,
+      from: fromStation,
+      to: toStation,
+    });
+  } catch {
+    return Response.json({ ok: false, reply: 'The step-free route planner is temporarily unavailable. Try again in a moment.' });
+  }
+}
 
 const UA = 'HackachusettsLastMile/1.0 (safe-route chatbot)';
 const BOS_VIEWBOX = '-71.20,42.20,-70.98,42.45'; // lon,lat,lon,lat
@@ -276,6 +351,10 @@ export async function POST(request: Request) {
   if (!message) {
     return Response.json({ reply: 'Ask me for a safe route, e.g. "from Fenway Park to Boston Common".', ok: false });
   }
+
+  // Step-free train trips (wheelchair / no stairs) take priority over the bike flow.
+  const stepFree = await stepFreeReply(message, new URL(request.url).origin);
+  if (stepFree) return stepFree;
 
   const places = await geminiExtract(message);
   if (!places?.from || !places?.to) {
