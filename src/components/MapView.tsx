@@ -40,6 +40,9 @@ const STATION_LAYERS = ['stations-yes', 'stations-partial', 'stations-no', 'stat
 
 // One circle per intersection; it grows with zoom so dense areas stay readable zoomed out.
 const CRASH_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 2.5, 14, 5, 17, 9];
+// Selection ring: 4 px larger at every stop. MapLibre only allows "zoom" at the top level of interpolate,
+// so ['+', CRASH_RADIUS, 4] is rejected.
+const CRASH_SELECTED_RADIUS = ['interpolate', ['linear'], ['zoom'], 11, 6.5, 14, 9, 17, 13];
 
 // MapLibre 6 looks for its worker next to its own bundle file, which the bundler renames.
 // Point it at the worker emitted as a static asset instead.
@@ -61,14 +64,19 @@ export default function MapView(props: MapViewProps) {
 
   const onError = useCallback(
     (e: { error?: Error }) => {
-      // Only a style that never loaded triggers the fallback; tile hiccups after load are ignored.
-      if (loaded) return;
-      console.warn('Map style error', e.error?.message);
-      if (styleIdx < STYLES.length - 1) {
-        setStyleIdx((i) => i + 1);
-      } else {
-        setFailed(true);
+      const message = e.error?.message ?? '';
+      // Layer validation errors ("layers.<id>...") are bugs in our layers, not a failed base map:
+      // switching styles for them wipes the base map. Log them and keep the style.
+      if (loaded || message.startsWith('layers.')) {
+        console.warn('Map error', message);
+        return;
       }
+      console.warn('Map style error', message);
+      // Defer: MapLibre can fire 'error' while react-map-gl renders a <Layer>, and setState during render is not allowed.
+      queueMicrotask(() => {
+        if (styleIdx < STYLES.length - 1) setStyleIdx((i) => i + 1);
+        else setFailed(true);
+      });
     },
     [loaded, styleIdx],
   );
@@ -152,7 +160,7 @@ export default function MapView(props: MapViewProps) {
                   filter={['==', ['get', 'site'], selectedHex ?? '']}
                   paint={{
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                    'circle-radius': ['+', CRASH_RADIUS, 4] as any,
+                    'circle-radius': CRASH_SELECTED_RADIUS as any,
                     'circle-color': 'rgba(0,0,0,0)',
                     'circle-stroke-color': '#111827',
                     'circle-stroke-width': 3,
