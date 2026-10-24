@@ -1,0 +1,146 @@
+# LastMile CI — the "git workflow checks".
+#
+# Runs on every push and every PR into main. Green = safe to merge.
+#
+# The repo is MID-PIVOT: the Python/Flask app (app/) exists now, and the plan
+# (docs/tech-stack.md) is a Next.js + TypeScript app that isn't scaffolded yet.
+# So every job is GUARDED: it checks whether its files exist and skips cleanly
+# if they don't. Nothing here goes red just because the Next.js app isn't built
+# yet — each check turns itself on the moment its files land.
+#
+# Jobs:
+#   python-app   — parses & smoke-imports the current Flask app
+#   typecheck    — TypeScript `tsc --noEmit` once package.json exists
+#   lint         — `npm run lint` once a lint script exists
+#   test         — Vitest once a test script exists
+#   build        — `npm run build` (Next.js) once it exists
+#   docker       — `docker build` once a Dockerfile exists
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # --- Current app: Python/Flask -------------------------------------------
+  python-app:
+    name: Python app — parse & smoke import
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install deps (only if the app exists)
+        run: |
+          if [ -d app ]; then
+            python -m pip install --upgrade pip
+            pip install flask pandas numpy scikit-learn h3
+          else
+            echo "No app/ directory — skipping."
+          fi
+      - name: Parse & import
+        run: |
+          if [ -f app/app.py ]; then
+            cd app
+            python -c "import ast; ast.parse(open('app.py').read()); print('app.py OK')"
+            [ -f predict.py ] && python -c "import ast; ast.parse(open('predict.py').read()); print('predict.py OK')"
+            python -c "import app as a; assert a.app is not None; print('Flask app OK:', a.app.name)"
+          else
+            echo "No app/app.py — skipping."
+          fi
+
+  # --- Future app: Next.js + TypeScript ------------------------------------
+  typecheck:
+    name: TypeScript — tsc --noEmit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Type-check (only if a TS project exists)
+        run: |
+          if [ -f package.json ]; then
+            npm ci || npm install
+            if [ -f tsconfig.json ]; then
+              npx tsc --noEmit
+            else
+              echo "No tsconfig.json yet — skipping type-check."
+            fi
+          else
+            echo "No package.json yet — skipping type-check."
+          fi
+
+  lint:
+    name: ESLint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Lint (only if a lint script exists)
+        run: |
+          if [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.lint?0:1)"; then
+            npm ci || npm install
+            npm run lint
+          else
+            echo "No lint script yet — skipping."
+          fi
+
+  test:
+    name: Vitest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Test (only if a test script exists)
+        run: |
+          if [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.test?0:1)"; then
+            npm ci || npm install
+            npm test
+          else
+            echo "No test script yet — skipping."
+          fi
+
+  build:
+    name: Next.js build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build (only if a build script exists)
+        env:
+          # Build must not need real secrets. Provide a dummy so code that
+          # reads process.env at build time doesn't crash. Never put a real key here.
+          MBTA_API_KEY: "ci-dummy-key"
+        run: |
+          if [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.build?0:1)"; then
+            npm ci || npm install
+            npm run build
+          else
+            echo "No build script yet — skipping."
+          fi
+
+  # --- Docker build check --------------------------------------------------
+  docker:
+    name: Docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the image (only if a Dockerfile exists)
+        run: |
+          if [ -f Dockerfile ]; then
+            docker build -t lastmile:ci .
+            echo "Docker image built OK."
+          else
+            echo "No Dockerfile yet — skipping."
+          fi
