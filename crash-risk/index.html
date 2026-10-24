@@ -85,6 +85,7 @@
     .maplibregl-popup-content { font-size: 13px; line-height: 1.5;
       border-radius: 8px; padding: 10px 12px; color: #1a1a1a; }
     .maplibregl-popup-content b { color: #111; }
+    .maplibregl-popup-content .nb { color: #666; font-size: 12px; margin-bottom: 4px; }
     .modebars { display: flex; gap: 4px; margin-top: 6px; }
     .modebars span { font-size: 11px; padding: 1px 6px; border-radius: 4px;
       background: #eee; color: #333; }
@@ -97,17 +98,17 @@
     <aside id="sidebar">
       <div class="head">
         <h1>Boston Crash Risk</h1>
-        <p>Predicted crash risk by location for the month ahead, from 11 years
-           of Vision Zero records. Combines where and when.</p>
+        <p>Predicted crash risk per intersection for the month ahead, from 11
+           years of Vision Zero records. Combines where and when.</p>
       </div>
       <div class="stats" id="stats">
-        <div class="stat"><div class="v" id="s-hex">—</div><div class="k">Zones</div></div>
+        <div class="stat"><div class="v" id="s-int">—</div><div class="k">Intersections</div></div>
         <div class="stat"><div class="v" id="s-hist">—</div><div class="k">Crashes (11y)</div></div>
         <div class="stat"><div class="v" id="s-top">—</div><div class="k">Top risk/yr</div></div>
       </div>
       <div class="searchbar">
-        <input id="search" type="search" aria-label="Search a street or intersection"
-               placeholder="Search a street or intersection…" />
+        <input id="search" type="search" aria-label="Search a street or neighborhood"
+               placeholder="Search a street or neighborhood…" />
       </div>
       <div class="list" id="list"></div>
       <div class="foot">Risk = model-predicted expected crashes. Police-reported
@@ -115,7 +116,7 @@
     </aside>
     <div id="map"></div>
     <div class="toggle">
-      <label for="tileToggle">Hexagon overlay</label>
+      <label for="tileToggle">Risk layer</label>
       <span class="switch">
         <input type="checkbox" id="tileToggle" checked />
         <span class="slider"></span>
@@ -151,7 +152,7 @@
       return "rgb(196,30,30)";
     }
 
-    const hexCenters = {};   // hex id -> [lng, lat], for the sidebar fly-to
+    const bySite = {};   // site id -> feature properties, for the sidebar
     let activeEl = null;
 
     // Escape any data value before it goes into innerHTML / setHTML.
@@ -159,133 +160,116 @@
       return String(v ?? "").replace(/[&<>"']/g, (c) => (
         { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     }
+    const hour12 = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
 
     function popupHtml(p) {
-      return `<b>${esc(p.label)}</b><br/>` +
-        `Predicted: <b>${esc(p.risk_yr)}</b> crashes/year<br/>` +
+      return `<b>${esc(p.label)}</b>` +
+        (p.neighborhood ? `<div class="nb">${esc(p.neighborhood)}</div>` : "<br/>") +
+        `Predicted: <b>${esc(Number(p.risk_yr).toFixed(1))}</b> crashes/year<br/>` +
         `Risk score: ${esc((Number(p.risk_norm) * 100).toFixed(0))}/100<br/>` +
-        `<span style="color:#666">Historic: ${esc(p.total_crashes)} crashes ` +
-        `(🚗 ${esc(p.mv)} · 🚶 ${esc(p.ped)} · 🚲 ${esc(p.bike)})</span>`;
+        `Historic: ${esc(p.total_crashes)} crashes ` +
+        `(🚗 ${esc(p.mv)} · 🚶 ${esc(p.ped)} · 🚲 ${esc(p.bike)})<br/>` +
+        `Last 12 months: ${esc(p.last12)}<br/>` +
+        // a "most common" day/hour means nothing for 1-2 crashes
+        (p.total_crashes >= 3 ?
+          `Most crashes: ${esc(p.peak_day)}s around ${esc(hour12(p.peak_hour))}<br/>` : "") +
+        `<span style="color:#666">On record ${esc(p.first)} → ${esc(p.last)}</span>`;
     }
 
-    // Load the risk layer as a GeoJSON source + fill layer once the style is ready.
+    const RISK_LAYERS = ["risk-heat", "risk-pt", "risk-hover"];
+    // circle size grows with risk and with zoom
+    const RADIUS = ["interpolate", ["linear"], ["zoom"],
+      12, ["+", 2, ["*", 6, ["get", "risk_norm"]]],
+      17, ["+", 5, ["*", 16, ["get", "risk_norm"]]]];
+    const FADE_IN = ["interpolate", ["linear"], ["zoom"], 12, 0, 14, 0.9];
+
     map.on("load", () => {
       fetch("/api/risk").then(r => r.json()).then(gj => {
         // precompute a risk color per feature (MapLibre expressions can't call JS)
         gj.features.forEach(f => {
           f.properties._color = color(f.properties.risk_norm);
-          hexCenters[f.properties.hex] = [f.properties.lng, f.properties.lat];
+          bySite[f.properties.site] = f.properties;
         });
-
         map.addSource("risk", { type: "geojson", data: gj });
 
         // Insert the risk layers BELOW the first text/symbol layer so that
         // street + place NAMES from the basemap always stay on top and legible.
-        const firstSymbol = map.getStyle().layers
-          .find(l => l.type === "symbol");
+        const firstSymbol = map.getStyle().layers.find(l => l.type === "symbol");
         const beforeId = firstSymbol ? firstSymbol.id : undefined;
 
+        // zoomed out: heatmap of risk, fading out as circles fade in
         map.addLayer({
-          id: "risk-fill", type: "fill", source: "risk",
+          id: "risk-heat", type: "heatmap", source: "risk", maxzoom: 15,
           paint: {
-            "fill-color": ["get", "_color"],
-            "fill-opacity": 0.55,
+            "heatmap-weight": ["get", "risk_norm"],
+            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 1, 14, 2],
+            "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 10, 6, 14, 18],
+            "heatmap-color": ["interpolate", ["linear"], ["heatmap-density"],
+              0, "rgba(40,60,90,0)", 0.2, "rgb(250,227,90)",
+              0.5, "rgb(247,148,42)", 1, "rgb(196,30,30)"],
+            "heatmap-opacity": ["interpolate", ["linear"], ["zoom"], 12, 0.8, 14.5, 0],
           },
         }, beforeId);
+        // street zoom: one circle per intersection, riskiest drawn on top
         map.addLayer({
-          id: "risk-outline", type: "line", source: "risk",
-          paint: { "line-color": "#333", "line-width": 0.3 },
+          id: "risk-pt", type: "circle", source: "risk", minzoom: 12,
+          layout: { "circle-sort-key": ["get", "risk_norm"] },
+          paint: {
+            "circle-color": ["get", "_color"],
+            "circle-radius": RADIUS,
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 1,
+            "circle-opacity": FADE_IN, "circle-stroke-opacity": FADE_IN,
+          },
         }, beforeId);
-        // highlight outline for the hovered hex (kept on top)
+        // highlight ring for the hovered/selected intersection (kept on top)
         map.addLayer({
-          id: "risk-hover", type: "line", source: "risk",
-          paint: { "line-color": "#ffffff", "line-width": 2 },
-          filter: ["==", "hex", ""],
+          id: "risk-hover", type: "circle", source: "risk",
+          filter: ["==", ["get", "site"], ""],
+          paint: {
+            "circle-radius": RADIUS, "circle-color": "rgba(0,0,0,0)",
+            "circle-stroke-color": "#ffffff", "circle-stroke-width": 3,
+          },
         });
 
-        const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "260px" });
+        const popup = new maplibregl.Popup({ closeButton: true, maxWidth: "280px" });
+        const highlight = (site) =>
+          map.setFilter("risk-hover", ["==", ["get", "site"], site]);
 
-        map.on("mousemove", "risk-fill", (e) => {
+        map.on("mousemove", "risk-pt", (e) => {
           map.getCanvas().style.cursor = "pointer";
-          const f = e.features[0];
-          map.setFilter("risk-hover", ["==", "hex", f.properties.hex]);
+          highlight(e.features[0].properties.site);
         });
-        map.on("mouseleave", "risk-fill", () => {
+        map.on("mouseleave", "risk-pt", () => {
           map.getCanvas().style.cursor = "";
-          map.setFilter("risk-hover", ["==", "hex", ""]);
+          highlight("");
         });
-        map.on("click", "risk-fill", (e) => {
-          const p = e.features[0].properties;
-          popup.setLngLat(e.lngLat).setHTML(popupHtml(p)).addTo(map);
+        map.on("click", "risk-pt", (e) => {
+          const p = bySite[e.features[0].properties.site];
+          popup.setLngLat([p.lng, p.lat]).setHTML(popupHtml(p)).addTo(map);
         });
 
-        // expose a helper for the sidebar to open a hex programmatically
-        window._openHex = (hex, lngLat) => {
-          const feats = map.querySourceFeatures("risk",
-            { filter: ["==", "hex", hex] });
-          const p = feats.length ? feats[0].properties : null;
-          if (p) popup.setLngLat(lngLat).setHTML(popupHtml(p)).addTo(map);
-          map.setFilter("risk-hover", ["==", "hex", hex]);
+        // expose a helper for the sidebar to open an intersection programmatically
+        window._openSite = (site) => {
+          const p = bySite[site];
+          if (!p) return;
+          popup.setLngLat([p.lng, p.lat]).setHTML(popupHtml(p)).addTo(map);
+          highlight(site);
         };
 
-        // --- Risk-hexagon toggle -----------------------------------------
-        // The OpenFreeMap basemap (streets + names) is ALWAYS visible.
-        // ON  : discrete risk hexagons drawn as a colored overlay on the map.
-        // OFF : hexagons drop below the roads and the street network itself
-        //       takes on the risk color, so the MAP shows the prone zones.
-        const ROAD_LAYERS = [
-          "road_motorway", "road_motorway_link",
-          "road_trunk_primary", "road_secondary_tertiary",
-          "road_minor", "road_link",
-          "bridge_motorway", "bridge_trunk_primary", "bridge_street",
-          "tunnel_motorway", "tunnel_trunk_primary",
-        ].filter(id => map.getLayer(id));
-
-        // remember each road layer's original paint so we can restore it
-        const roadOrig = {};
-        ROAD_LAYERS.forEach(id => {
-          roadOrig[id] = {
-            color: map.getPaintProperty(id, "line-color"),
-            width: map.getPaintProperty(id, "line-width"),
-          };
+        document.getElementById("tileToggle").addEventListener("change", (e) => {
+          RISK_LAYERS.forEach(id => map.setLayoutProperty(id, "visibility",
+            e.target.checked ? "visible" : "none"));
+          if (!e.target.checked) popup.remove();
         });
-
-        function setHexOverlay(on) {
-          if (on) {
-            // OVERLAY MODE: solid risk hexagons sit on top of the map.
-            map.setLayoutProperty("risk-fill", "visibility", "visible");
-            map.setPaintProperty("risk-fill", "fill-opacity", 0.55);
-            map.setLayoutProperty("risk-outline", "visibility", "visible");
-            ROAD_LAYERS.forEach(id => {
-              map.setPaintProperty(id, "line-color", roadOrig[id].color);
-              if (roadOrig[id].width != null)
-                map.setPaintProperty(id, "line-width", roadOrig[id].width);
-            });
-          } else {
-            // OFF: hide the risk hexagons entirely — show only the plain
-            // OpenFreeMap basemap, with its roads at their original colours.
-            map.setLayoutProperty("risk-fill", "visibility", "none");
-            map.setLayoutProperty("risk-outline", "visibility", "none");
-            map.setFilter("risk-hover", ["==", "hex", ""]);
-            ROAD_LAYERS.forEach(id => {
-              map.setPaintProperty(id, "line-color", roadOrig[id].color);
-              if (roadOrig[id].width != null)
-                map.setPaintProperty(id, "line-width", roadOrig[id].width);
-            });
-          }
-        }
-
-        document.getElementById("tileToggle")
-          .addEventListener("change", (e) => setHexOverlay(e.target.checked));
       });
     });
 
     // Stats header
     fetch("/api/stats").then(r => r.json()).then(s => {
-      document.getElementById("s-hex").textContent = s.hexagons.toLocaleString();
+      document.getElementById("s-int").textContent = s.intersections.toLocaleString();
       document.getElementById("s-hist").textContent =
-        (s.historical_crashes / 1000).toFixed(0) + "k";
-      document.getElementById("s-top").textContent = s.top_risk_yr.toFixed(0);
+        (s.historical_crashes / 1000).toFixed(1) + "k";
+      document.getElementById("s-top").textContent = s.top_risk_yr.toFixed(1);
     });
 
     // Ranked location list (with search)
@@ -299,7 +283,7 @@
         const c = color(Number(r.risk_norm));
         const perYr = Number(r.risk_yr).toFixed(1);
         el.setAttribute("aria-label",
-          `${i + 1}. ${r.label}: predicted ${perYr} crashes per year, ` +
+          `${i + 1}. ${r.label}${r.neighborhood ? ", " + r.neighborhood : ""}: predicted ${perYr} crashes per year, ` +
           `risk score ${(Number(r.risk_norm) * 100).toFixed(0)} of 100. ` +
           `Historic ${r.total_crashes} crashes: ${r.mv} vehicle, ` +
           `${r.ped} pedestrian, ${r.bike} bike. Show on map.`);
@@ -308,23 +292,21 @@
           `<span class="dot" aria-hidden="true" style="background:${c}"></span>` +
           `<span class="body" aria-hidden="true">` +
             `<span class="name">${esc(r.label)}</span>` +
-            `<span class="sub">🚗 ${esc(r.mv)} · 🚶 ${esc(r.ped)} · 🚲 ${esc(r.bike)} · ` +
-              `${esc(r.total_crashes)} total</span>` +
+            `<span class="sub">${r.neighborhood ? esc(r.neighborhood) + " · " : ""}` +
+              `🚗 ${esc(r.mv)} · 🚶 ${esc(r.ped)} · 🚲 ${esc(r.bike)}</span>` +
           `</span>` +
           `<span class="risk-pill" aria-hidden="true" style="color:${c}">` +
             `${esc(perYr)}/yr</span>`;
-        el.onclick = () => focusHex(r, el);
+        el.onclick = () => focusSite(r, el);
         listEl.appendChild(el);
       });
       if (!rows.length) listEl.innerHTML =
         '<p style="color:var(--muted);padding:12px">No locations match.</p>';
     }
 
-    function focusHex(r, el) {
-      const lngLat = [r.lng, r.lat];
-      map.flyTo({ center: lngLat, zoom: 15.5, duration: 800 });
-      // open the popup after the camera settles and tiles/features are queryable
-      if (window._openHex) setTimeout(() => window._openHex(r.hex, lngLat), 850);
+    function focusSite(r, el) {
+      map.flyTo({ center: [r.lng, r.lat], zoom: 16.5, duration: 800 });
+      if (window._openSite) setTimeout(() => window._openSite(r.site), 850);
       if (activeEl) {
         activeEl.classList.remove("active");
         activeEl.removeAttribute("aria-current");
@@ -353,7 +335,8 @@
        ["Elevated", 0.6, "45–80"], ["Highest", 1.0, "80–100"]]
         .map(([l, v, range]) =>
           `<i aria-hidden="true" style="background:${color(v)}"></i>${l} (${range})`)
-        .join("<br/>");
+        .join("<br/>") +
+      '<div style="color:var(--muted);margin-top:4px">Circle size = risk</div>';
   </script>
 </body>
 </html>

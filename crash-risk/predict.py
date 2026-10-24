@@ -4,17 +4,19 @@ Vision Zero crash risk model — combined spatial (A) + spatiotemporal (B) frami
 What it does
 ------------
 1. Loads Boston Vision Zero crash records (data.csv).
-2. Bins every crash into an H3 hexagon (WHERE) and a month (WHEN).
-3. Builds a complete hex x month panel so zero-crash cells become real
-   negative examples (not just the places that already had crashes).
-4. Engineers spatial + temporal + mode features.
+2. Keys every intersection crash to its intersection site (WHERE: the two
+   crossing street names, split by location when a name pair repeats) and
+   a month (WHEN).
+3. Builds a complete site x month panel so zero-crash months become real
+   negative examples.
+4. Engineers spatial + temporal features.
 5. Trains a Poisson gradient-boosted model to predict crash COUNT per
-   hex-month (risk), training on the past and testing on the held-out future.
-6. Scores the risk of each hexagon for a chosen future month and exports
-   risk.geojson for mapping.
+   site-month (risk), training on the past and testing on the held-out future.
+6. Scores the risk of each intersection for the next month and exports
+   risk.geojson (one Point per intersection) for mapping.
 
 Run:  python3 predict.py
-Then: open map.html  (loads risk.geojson)
+Then: python3 app.py  and open http://localhost:8777
 """
 
 from __future__ import annotations
@@ -27,8 +29,10 @@ from pathlib import Path
 import h3
 import numpy as np
 import pandas as pd
+from sklearn.cluster import DBSCAN
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.metrics import mean_poisson_deviance
+from sklearn.neighbors import BallTree
 
 # ----------------------------------------------------------------------------
 # Config
@@ -42,61 +46,65 @@ OUT_GEOJSON = HERE / "risk.geojson"
 # The LastMile Next.js app serves this copy at /data/crash-risk.geojson.
 NEXT_DATA_DIR = HERE.parent / "public" / "data"
 
-H3_RES = 9            # ~0.10 km^2 hexes (finer). res 8 coarser, res 10 finer.
 TRAIN_END = "2024-12-31"   # train on <= this date, test on what comes after
 MODES = ["mv", "ped", "bike"]
+SITE_SPLIT_M = 150    # same street-name pair farther apart than this = different intersections
+NEIGHBOR_M = 300      # radius for the neighbor-risk feature
+TZ = "America/New_York"
 
 
 # ----------------------------------------------------------------------------
-# 1. Load + clean
+# 1. Load + clean: one row per intersection crash, keyed by intersection site
 # ----------------------------------------------------------------------------
-def load_crashes() -> pd.DataFrame:
-    df = pd.read_csv(DATA)
+def intersection_key(a: str, b: str) -> str:
+    """Order/case/space-insensitive name for the intersection of streets a and b."""
+    return " & ".join(sorted(s.strip().upper() for s in (a, b)))
+
+
+def assign_sites(df: pd.DataFrame) -> pd.Series:
+    """Site id per crash: the intersection name, split by location when one
+    name pair occurs in several places (e.g. Washington St in two neighborhoods)."""
+    site = df["name"].copy()
+    for name, g in df.groupby("name"):
+        if len(g) < 2:
+            continue
+        labels = DBSCAN(eps=SITE_SPLIT_M / 6_371_000, min_samples=1,
+                        metric="haversine").fit_predict(
+            np.radians(g[["latitude", "longitude"]].to_numpy()))
+        if labels.max() == 0:
+            continue
+        # number clusters by size, largest first
+        order = pd.Series(labels).value_counts().index
+        rank = {lab: i + 1 for i, lab in enumerate(order)}
+        site.loc[g.index] = [f"{name} #{rank[lab]}" for lab in labels]
+    return site
+
+
+def load_crashes(path: Path = DATA) -> pd.DataFrame:
+    df = pd.read_csv(path)
     df["when"] = pd.to_datetime(df["when"], utc=True, errors="coerce")
     df = df.dropna(subset=["when", "latitude", "longitude"])
     # Keep Boston-ish bounding box; drop obvious junk coordinates.
     df = df[
         df["latitude"].between(42.20, 42.45)
         & df["longitude"].between(-71.20, -70.98)
-    ].copy()
-    df["hex"] = [
-        h3.latlng_to_cell(lat, lng, H3_RES)
-        for lat, lng in zip(df["latitude"], df["longitude"])
     ]
+    # Intersection rows carry the two crossing streets in cross_street(_2);
+    # mid-block ("Street") and "Other" rows have no intersection to predict.
+    a = df["cross_street"].fillna("").astype(str).str.strip()
+    b = df["cross_street_2"].fillna("").astype(str).str.strip()
+    df = df[(df["where"] == "Intersection") & (a != "") & (b != "")].copy()
+    df["name"] = [intersection_key(x, y) for x, y in
+                  zip(df["cross_street"], df["cross_street_2"])]
+    df["site"] = assign_sites(df)
+    df["local"] = df["when"].dt.tz_convert(TZ)
     # Floor each timestamp to the first of its month (tz-naive).
     df["month"] = df["when"].dt.tz_localize(None).values.astype("datetime64[M]")
     df["month"] = pd.to_datetime(df["month"])
     return df
 
 
-# ----------------------------------------------------------------------------
-# 1b. Human-readable location label per hexagon (from the CSV street data)
-# ----------------------------------------------------------------------------
-def _row_label(r: pd.Series) -> str:
-    """Build a readable place name from a crash row's street fields."""
-    def clean(x):
-        return str(x).strip().title() if pd.notna(x) and str(x).strip() else ""
-
-    street = clean(r.get("street"))
-    x1 = clean(r.get("cross_street"))
-    x2 = clean(r.get("cross_street_2"))
-    crosses = [c for c in (x1, x2) if c and "Ramp" not in c]
-    if street and crosses:
-        return f"{street} @ {crosses[0]}"
-    if street:
-        return street
-    if len(crosses) >= 2:
-        return f"{crosses[0]} @ {crosses[1]}"
-    if crosses:
-        return crosses[0]
-    return "Unknown location"
-
-
-# --- OpenStreetMap Nominatim reverse geocoding (free, no key) -----------------
-NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
-GEOCACHE = HERE / "geocache.json"
-# Nominatim usage policy: <= 1 request/second, identify yourself via User-Agent.
-NOMINATIM_UA = "HackachusettsVisionZero/1.0 (crash-risk demo)"
+GEOCACHE = HERE / "geocache.json"   # cached OSM Nominatim labels per H3 res-9 cell
 
 
 def _load_geocache() -> dict:
@@ -108,114 +116,56 @@ def _load_geocache() -> dict:
     return {}
 
 
-def _osm_name(addr: dict) -> str:
-    """Turn a Nominatim address object into a short, readable place name."""
-    road = addr.get("road") or addr.get("pedestrian") or addr.get("footway")
-    area = (addr.get("neighbourhood") or addr.get("suburb")
-            or addr.get("city_district") or addr.get("quarter"))
-    if road and area:
-        return f"{road}, {area}"
-    if road:
-        return road
-    if area:
-        return area
-    return addr.get("city") or "Unknown location"
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
-def reverse_geocode_hexes(coords: dict[str, tuple[float, float]]) -> dict[str, str]:
-    """Reverse-geocode each hex centroid via OSM Nominatim, with disk caching.
+def neighborhood_for(lat: float, lng: float, cache: dict) -> str:
+    """Neighborhood from the cached OSM label ("road, neighborhood") of the H3 res-9 cell."""
+    label = cache.get(h3.latlng_to_cell(lat, lng, 9), "")
+    return label.rsplit(", ", 1)[1] if ", " in label else ""
 
-    coords: {hex_id: (lat, lng)}. Returns {hex_id: osm_label}.
-    Cached results are reused, so this only pays the ~1 req/sec cost once.
-    """
-    import time
-    import urllib.parse
-    import urllib.request
 
+def site_info(df: pd.DataFrame) -> pd.DataFrame:
+    """Per intersection: display name, location, crash stats, and when crashes happen."""
     cache = _load_geocache()
-    todo = [h for h in coords if h not in cache]
-    if todo:
-        print(f"  reverse-geocoding {len(todo)} new hexes via OSM Nominatim "
-              f"(~{len(todo)}s, respecting 1 req/sec)...")
-    for i, hx in enumerate(todo, 1):
-        lat, lng = coords[hx]
-        qs = urllib.parse.urlencode({
-            "lat": f"{lat:.6f}", "lon": f"{lng:.6f}",
-            "format": "jsonv2", "zoom": "17", "addressdetails": "1",
-        })
-        req = urllib.request.Request(
-            f"{NOMINATIM_URL}?{qs}", headers={"User-Agent": NOMINATIM_UA}
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                data = json.loads(resp.read())
-            cache[hx] = _osm_name(data.get("address", {}))
-        except Exception as e:  # network/timeout/etc. — leave for CSV fallback
-            cache[hx] = ""
-            if i <= 3:
-                print(f"    warn: geocode failed for {hx}: {e}")
-        time.sleep(1.1)  # stay under Nominatim's 1 req/sec limit
-        if i % 50 == 0:
-            GEOCACHE.write_text(json.dumps(cache))  # checkpoint
-            print(f"    {i}/{len(todo)} geocoded...")
-    GEOCACHE.write_text(json.dumps(cache))
-    return cache
-
-
-def hex_labels(df: pd.DataFrame, geocode: bool = True) -> pd.DataFrame:
-    """For each hex: a location label + crash stats by mode.
-
-    Labels come from OpenStreetMap Nominatim (reverse-geocoded hex centroids),
-    falling back to the CSV street fields when OSM has no useful name.
-    """
-    df = df.copy()
-    df["label_csv"] = df.apply(_row_label, axis=1)
-
+    cutoff = df["month"].max() - pd.DateOffset(months=11)   # last 12 months of data
     rows = []
-    coords = {}
-    for hx, g in df.groupby("hex"):
-        vc = g["label_csv"][g["label_csv"] != "Unknown location"].value_counts()
-        csv_label = vc.index[0] if len(vc) else "Unknown location"
-        modes = g["mode"].value_counts().to_dict()
-        lat, lng = h3.cell_to_latlng(hx)
-        coords[hx] = (lat, lng)
+    for site, g in df.groupby("site"):
+        modes = g["mode"].value_counts()
+        lat, lng = float(g["latitude"].median()), float(g["longitude"].median())
         rows.append({
-            "hex": hx,
-            "label_csv": csv_label,
-            "total_crashes": int(len(g)),
+            "site": site,
+            "label": g["name"].iloc[0].title(),
+            "neighborhood": neighborhood_for(lat, lng, cache),
+            "lat": lat,
+            "lng": lng,
+            "total_crashes": len(g),
             "mv": int(modes.get("mv", 0)),
             "ped": int(modes.get("ped", 0)),
             "bike": int(modes.get("bike", 0)),
+            "last12": int((g["month"] >= cutoff).sum()),
+            "peak_hour": int(g["local"].dt.hour.mode().iloc[0]),
+            "peak_day": DAYS[int(g["local"].dt.day_of_week.mode().iloc[0])],
             "first": g["when"].min().date().isoformat(),
             "last": g["when"].max().date().isoformat(),
         })
-
-    out = pd.DataFrame(rows).set_index("hex")
-
-    # Primary label from OSM; fall back to the CSV-derived name.
-    osm = reverse_geocode_hexes(coords) if geocode else {}
-    out["label_osm"] = out.index.map(lambda h: osm.get(h, "") or "")
-    out["label"] = [
-        o if o and o != "Unknown location" else c
-        for o, c in zip(out["label_osm"], out["label_csv"])
-    ]
-    return out
+    return pd.DataFrame(rows).set_index("site")
 
 
 # ----------------------------------------------------------------------------
-# 2. Build the complete hex x month panel (this is the key step)
+# 2. Build the complete site x month panel (this is the key step)
 # ----------------------------------------------------------------------------
 def build_panel(df: pd.DataFrame) -> pd.DataFrame:
-    hexes = sorted(df["hex"].unique())
+    sites = sorted(df["site"].unique())
     months = pd.date_range(df["month"].min(), df["month"].max(), freq="MS")
 
-    # counts per hex-month-mode
+    # counts per site-month-mode
     counts = (
-        df.groupby(["hex", "month", "mode"]).size().rename("n").reset_index()
+        df.groupby(["site", "month", "mode"]).size().rename("n").reset_index()
     )
     wide = (
         counts.pivot_table(
-            index=["hex", "month"], columns="mode", values="n", fill_value=0
+            index=["site", "month"], columns="mode", values="n", fill_value=0
         )
         .reset_index()
     )
@@ -224,20 +174,20 @@ def build_panel(df: pd.DataFrame) -> pd.DataFrame:
             wide[m] = 0
     wide["crashes"] = wide[MODES].sum(axis=1)
 
-    # full grid: every hex x every month (fills in the zeros = negatives)
+    # full grid: every site x every month (fills in the zeros = negatives)
     full = pd.MultiIndex.from_product(
-        [hexes, months], names=["hex", "month"]
+        [sites, months], names=["site", "month"]
     ).to_frame(index=False)
-    panel = full.merge(wide, on=["hex", "month"], how="left").fillna(0)
+    panel = full.merge(wide, on=["site", "month"], how="left").fillna(0)
     for c in MODES + ["crashes"]:
         panel[c] = panel[c].astype(int)
-    return panel.sort_values(["hex", "month"]).reset_index(drop=True)
+    return panel.sort_values(["site", "month"]).reset_index(drop=True)
 
 
 # ----------------------------------------------------------------------------
 # 3. Feature engineering: spatial (A) + temporal (B)
 # ----------------------------------------------------------------------------
-def add_features(panel: pd.DataFrame) -> pd.DataFrame:
+def add_features(panel: pd.DataFrame, info: pd.DataFrame) -> pd.DataFrame:
     p = panel.copy()
 
     # --- WHEN (framing B): cyclical time so Dec is "next to" Jan ---
@@ -253,33 +203,35 @@ def add_features(panel: pd.DataFrame) -> pd.DataFrame:
     # is carried by seasonality (month_sin/cos, is_winter) plus the rolling
     # history features, which stay in-range because they update over time.
 
-    # --- WHERE (framing A): hex centroid coordinates ---
-    centro = {hx: h3.cell_to_latlng(hx) for hx in p["hex"].unique()}
-    p["lat"] = p["hex"].map(lambda h: centro[h][0])
-    p["lng"] = p["hex"].map(lambda h: centro[h][1])
+    # --- WHERE (framing A): intersection coordinates ---
+    p["lat"] = p["site"].map(info["lat"])
+    p["lng"] = p["site"].map(info["lng"])
 
-    # --- Per-hex history (leak-free: only uses the PAST of each hex) ---
-    p = p.sort_values(["hex", "month"]).reset_index(drop=True)
-    g = p.groupby("hex")["crashes"]
-    # trailing 12-month crash rate for this hex, shifted so it excludes "now"
-    p["hex_roll12"] = (
+    # --- Per-site history (leak-free: only uses the PAST of each site) ---
+    p = p.sort_values(["site", "month"]).reset_index(drop=True)
+    g = p.groupby("site")["crashes"]
+    # trailing 12-month crash rate for this site, shifted so it excludes "now"
+    p["site_roll12"] = (
         g.transform(lambda s: s.shift(1).rolling(12, min_periods=1).mean())
     ).fillna(0)
     # cumulative mean up to (but not including) this month
-    p["hex_expanding"] = (
+    p["site_expanding"] = (
         g.transform(lambda s: s.shift(1).expanding().mean())
     ).fillna(0)
-    p["hex_last"] = g.transform(lambda s: s.shift(1)).fillna(0)
+    p["site_last"] = g.transform(lambda s: s.shift(1)).fillna(0)
 
     # --- Spatial neighborhood risk (framing A smoothing) ---
-    # mean of each hex's overall history spread to its ring-1 neighbors.
-    hex_hist = p.groupby("hex")["crashes"].mean().to_dict()
-    neigh_score = {}
-    for hx in hex_hist:
-        ring = h3.grid_disk(hx, 1)
-        vals = [hex_hist[n] for n in ring if n in hex_hist and n != hx]
-        neigh_score[hx] = float(np.mean(vals)) if vals else 0.0
-    p["neighbor_hist"] = p["hex"].map(neigh_score)
+    # mean training-period crash rate of the OTHER intersections within
+    # NEIGHBOR_M (training months only, so the test period does not leak in).
+    rate = (p[p["month"] <= pd.Timestamp(TRAIN_END)].groupby("site")["crashes"]
+            .mean().reindex(info.index).fillna(0).to_numpy())
+    pts = np.radians(info[["lat", "lng"]].to_numpy())
+    nbrs = BallTree(pts, metric="haversine").query_radius(pts, r=NEIGHBOR_M / 6_371_000)
+    neigh_score = {
+        site: float(rate[idx[idx != i]].mean()) if len(idx) > 1 else 0.0
+        for i, (site, idx) in enumerate(zip(info.index, nbrs))
+    }
+    p["neighbor_hist"] = p["site"].map(neigh_score)
 
     return p
 
@@ -287,17 +239,25 @@ def add_features(panel: pd.DataFrame) -> pd.DataFrame:
 FEATURES = [
     "lat", "lng",
     "month_sin", "month_cos", "is_winter",
-    "hex_roll12", "hex_expanding", "hex_last", "neighbor_hist",
+    "site_roll12", "site_expanding", "site_last", "neighbor_hist",
 ]
 
 
 # ----------------------------------------------------------------------------
 # 4. Train / evaluate (past -> future split)
 # ----------------------------------------------------------------------------
-def train(panel: pd.DataFrame):
+def split_train_test(panel: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Past/future split over the sites knowable at TRAIN_END (>= 1 training
+    crash); sites that first appear later would be chosen using the future."""
     train_end = pd.Timestamp(TRAIN_END, tz=None)
-    tr = panel[panel["month"] <= train_end]
-    te = panel[panel["month"] > train_end]
+    past = panel["month"] <= train_end
+    known = panel.loc[past & (panel["crashes"] > 0), "site"].unique()
+    p = panel["site"].isin(known)
+    return panel[p & past], panel[p & ~past]
+
+
+def train(panel: pd.DataFrame):
+    tr, te = split_train_test(panel)
 
     X_tr, y_tr = tr[FEATURES], tr["crashes"]
     X_te, y_te = te[FEATURES], te["crashes"]
@@ -315,38 +275,38 @@ def train(panel: pd.DataFrame):
     # Evaluate on the held-out future.
     pred_te = np.clip(model.predict(X_te), 1e-6, None)
 
-    # Baseline: predict each hex's own training-period average every month.
-    hex_mean = tr.groupby("hex")["crashes"].mean()
-    base_vals = np.clip(te["hex"].map(hex_mean).fillna(y_tr.mean()).values, 1e-6, None)
+    # Baseline: predict each site's own training-period average every month.
+    site_mean = tr.groupby("site")["crashes"].mean()
+    base_vals = np.clip(te["site"].map(site_mean).fillna(y_tr.mean()).values, 1e-6, None)
 
     model_dev = mean_poisson_deviance(y_te, pred_te)
     base_dev = mean_poisson_deviance(y_te, base_vals)
 
-    # Ranking quality: do predicted-risky hexes actually get more crashes?
+    # Ranking quality: do predicted-risky intersections actually get more crashes?
     te_eval = te.copy()
     te_eval["pred"] = pred_te
-    ranked = te_eval.groupby("hex").agg(pred=("pred", "mean"),
+    ranked = te_eval.groupby("site").agg(pred=("pred", "mean"),
                                         actual=("crashes", "sum"))
     n_top = max(1, len(ranked) // 10)
     top_decile = ranked.nlargest(n_top, "pred")
     capture = top_decile["actual"].sum() / ranked["actual"].sum()
 
-    # Naive baseline for the same ranking question: rank hexes by their plain
+    # Naive baseline for the same ranking question: rank intersections by their plain
     # training-period crash total (no model), same top-10% cut.
-    train_total = tr.groupby("hex")["crashes"].sum()
+    train_total = tr.groupby("site")["crashes"].sum()
     ranked["train_total"] = ranked.index.map(train_total).fillna(0)
     base_top = ranked.nlargest(n_top, "train_total")
     capture_base = base_top["actual"].sum() / ranked["actual"].sum()
 
     print("\n=== Held-out future evaluation (test = after "
           f"{TRAIN_END}) ===")
-    print(f"test rows (hex-months): {len(te):,}")
+    print(f"test rows (site-months): {len(te):,}")
     print(f"Poisson deviance  model : {model_dev:.4f}")
     print(f"Poisson deviance  base  : {base_dev:.4f}  "
           f"(lower is better; model should beat baseline)")
     improvement = (base_dev - model_dev) / base_dev * 100
     print(f"improvement over baseline: {improvement:.1f}%")
-    print(f"top-10% riskiest hexes captured {capture*100:.1f}% of "
+    print(f"top-10% riskiest intersections captured {capture*100:.1f}% of "
           "actual future crashes")
     print(f"top-10% by past crash count (naive baseline) captured "
           f"{capture_base*100:.1f}% "
@@ -365,27 +325,27 @@ def train(panel: pd.DataFrame):
 # ----------------------------------------------------------------------------
 # 5. Score a future month -> GeoJSON risk layer
 # ----------------------------------------------------------------------------
-def score_future(panel: pd.DataFrame, model, labels: pd.DataFrame | None = None) -> pd.DataFrame:
-    """Predict risk for the month right after the data ends, per hex."""
+def score_future(panel: pd.DataFrame, model, info: pd.DataFrame) -> pd.DataFrame:
+    """Predict risk for the month right after the data ends, per intersection."""
     last_month = panel["month"].max()
     future = last_month + pd.offsets.MonthBegin(1)
 
-    # take the most recent row per hex as the feature template, roll time fwd
+    # take the most recent row per site as the feature template, roll time fwd
     latest = (
-        panel.sort_values("month").groupby("hex").tail(1).copy()
+        panel.sort_values("month").groupby("site").tail(1).copy()
     )
 
     # Recompute history features AS OF the end of data (looking into `future`),
     # so they reflect everything we actually observed up to last_month. The
     # stored values on this row excluded last_month itself (they were shifted),
     # so recompute them to include the full observed history.
-    g = panel.groupby("hex")["crashes"]
+    g = panel.groupby("site")["crashes"]
     roll12 = g.apply(lambda s: s.tail(12).mean()).to_dict()
     last_obs = g.apply(lambda s: s.iloc[-1]).to_dict()
     expand = g.mean().to_dict()
-    latest["hex_roll12"] = latest["hex"].map(roll12).fillna(0)
-    latest["hex_last"] = latest["hex"].map(last_obs).fillna(0)
-    latest["hex_expanding"] = latest["hex"].map(expand).fillna(0)
+    latest["site_roll12"] = latest["site"].map(roll12).fillna(0)
+    latest["site_last"] = latest["site"].map(last_obs).fillna(0)
+    latest["site_expanding"] = latest["site"].map(expand).fillna(0)
 
     latest["month"] = future
     latest = add_time_only(latest, future, base_year=panel["year"].min())
@@ -395,16 +355,11 @@ def score_future(panel: pd.DataFrame, model, labels: pd.DataFrame | None = None)
     # normalize 0..1 for color scaling on the map
     mx = latest["risk"].max() or 1.0
     latest["risk_norm"] = latest["risk"] / mx
-    cols = ["hex", "lat", "lng", "risk", "risk_yr", "risk_norm"]
-    out = latest[cols].copy()
-    if labels is not None:
-        out = out.merge(labels, left_on="hex", right_index=True, how="left")
-        out["label"] = out["label"].fillna("Unknown location")
-        for c in ["total_crashes", "mv", "ped", "bike"]:
-            out[c] = out[c].fillna(0).astype(int)
+    out = latest[["site", "risk", "risk_yr", "risk_norm"]].merge(
+        info, left_on="site", right_index=True)
 
-    print(f"\nScored {len(latest):,} hexagons for {future.date()}")
-    print(f"  riskiest hex: {latest['risk_yr'].max():.1f} expected crashes/year")
+    print(f"\nScored {len(latest):,} intersections for {future.date()}")
+    print(f"  riskiest: {latest['risk_yr'].max():.1f} expected crashes/year")
     return out
 
 
@@ -419,59 +374,50 @@ def add_time_only(df: pd.DataFrame, month: pd.Timestamp, base_year: int):
     return df
 
 
-def export_geojson(scored: pd.DataFrame):
+def export_geojson(scored: pd.DataFrame, path: Path = OUT_GEOJSON):
     feats = []
-    for _, r in scored.iterrows():
-        boundary = h3.cell_to_boundary(r["hex"])  # list of (lat, lng)
-        ring = [[lng, lat] for lat, lng in boundary]
-        ring.append(ring[0])
+    for r in scored.to_dict("records"):
         props = {
-            "hex": r["hex"],
-            "risk": round(float(r["risk"]), 4),
-            "risk_yr": round(float(r["risk_yr"]), 2),
-            "risk_norm": round(float(r["risk_norm"]), 4),
-            "lat": round(float(r["lat"]), 6),
-            "lng": round(float(r["lng"]), 6),
+            k: round(float(v), 6 if k in ("lat", "lng") else 4)
+            if isinstance(v, (float, np.floating)) else
+            int(v) if isinstance(v, np.integer) else v
+            for k, v in r.items()
         }
-        for key in ("label", "label_osm", "label_csv",
-                    "total_crashes", "mv", "ped", "bike", "first", "last"):
-            if key in r and pd.notna(r[key]):
-                props[key] = r[key] if not isinstance(r[key], (np.integer,)) else int(r[key])
         feats.append({
             "type": "Feature",
             "properties": props,
-            "geometry": {"type": "Polygon", "coordinates": [ring]},
+            "geometry": {"type": "Point", "coordinates": [props["lng"], props["lat"]]},
         })
     fc = {"type": "FeatureCollection", "features": feats}
-    OUT_GEOJSON.write_text(json.dumps(fc))
-    print(f"wrote {OUT_GEOJSON.name} ({len(feats)} hexagons)")
-    # Keep the LastMile Next.js app in sync: it reads public/data/crash-risk.geojson.
-    if NEXT_DATA_DIR.is_dir():
-        shutil.copyfile(OUT_GEOJSON, NEXT_DATA_DIR / "crash-risk.geojson")
-        print(f"copied to {NEXT_DATA_DIR / 'crash-risk.geojson'}")
+    path.write_text(json.dumps(fc))
+    print(f"wrote {path.name} ({len(feats)} intersections)")
 
 
 # ----------------------------------------------------------------------------
 def main():
     print("Loading crashes...")
     df = load_crashes()
-    print(f"  {len(df):,} valid crashes, "
+    print(f"  {len(df):,} intersection crashes, "
           f"{df['when'].min().date()} -> {df['when'].max().date()}")
 
-    print("Building hex x month panel...")
-    panel = build_panel(df)
-    panel = add_features(panel)
-    print(f"  panel: {len(panel):,} hex-month rows, "
-          f"{panel['hex'].nunique():,} hexagons")
+    print("Computing intersection details...")
+    info = site_info(df)
 
-    print("Computing location labels...")
-    labels = hex_labels(df)
+    print("Building site x month panel...")
+    panel = build_panel(df)
+    panel = add_features(panel, info)
+    print(f"  panel: {len(panel):,} site-month rows, "
+          f"{panel['site'].nunique():,} intersections")
 
     print("Training Poisson risk model...")
     model = train(panel)
 
-    scored = score_future(panel, model, labels)
+    scored = score_future(panel, model, info)
     export_geojson(scored)
+    # Keep the LastMile Next.js app in sync: it reads public/data/crash-risk.geojson.
+    if NEXT_DATA_DIR.is_dir():
+        shutil.copyfile(OUT_GEOJSON, NEXT_DATA_DIR / "crash-risk.geojson")
+        print(f"copied to {NEXT_DATA_DIR / 'crash-risk.geojson'}")
     print("\nDone. Run `python3 app.py` and open http://localhost:8777")
 
 
