@@ -8,6 +8,177 @@ import { connection } from 'next/server';
 import type { CrashSpot } from '@/lib/crash';
 import { getCrashSpots } from '@/lib/server/crash-data';
 import { riskExclusionPolygons, scorePath, type RiskScore } from '@/lib/safe-route';
+// Step-free routing + station status: reuse the existing router service + static data.
+import { getAlertsOrDemo, parseClosedParam, planWithClosures, stationDetail } from '@/lib/lastmile-service';
+import { getParentOf, loadDemoAlerts } from '@/lib/server/mbta';
+import { getStaticData } from '@/lib/server/static-data';
+
+// ---------------------------------------------------------------- conversational intents
+// Rough, keyword-based. Good enough for a demo; if an LLM key is set the from/to
+// extraction already upgrades automatically. Order matters: greet, then status
+// questions, then step-free, then the bike/walk fallback.
+
+const GREETING_RE = /^\s*(hi|hey|hello|yo|gm|good\s*(morning|afternoon|evening)|hiya|sup|namaste|vanakkam)\b/i;
+const STEP_FREE_RE = /\b(step[\s-]?free|wheelchair|accessible|accessibility|no stairs|step free)\b/i;
+// "is the elevator at X working", "is X accessible", "elevator status at X"
+const STATUS_RE = /\b(working|out of service|broken|down|status|accessible|usable)\b/i;
+const BROKEN_NOW_RE = /\b(what('?s| is)?\s+broken|broken now|outages?|which (elevators?|stations?)|closures?\s+now|down right now)\b/i;
+const HELP_RE = /\b(help|what can you (do|answer)|how do you work|options)\b/i;
+
+const GREETING_REPLY =
+  "Hi! 👋 I'm the LastMile assistant. I can:\n" +
+  '• plan a step-free train trip — "step-free from Alewife to Harvard"\n' +
+  '• check a station — "is the elevator at Park Street working?"\n' +
+  '• list what\'s broken now — "what\'s broken right now?"\n' +
+  '• find a low-crash walk/bike route — "safest walk from Fenway to the Common"\n' +
+  'What do you need?';
+
+/** Match a free-text place to a subway station id by name (case-insensitive). */
+function matchStation(place: string, stations: { id: string; name: string }[]): { id: string; name: string } | null {
+  const q = place
+    .trim()
+    .toLowerCase()
+    .replace(/[?.!,]/g, ' ') // drop punctuation that clings to the name ("park street?")
+    .replace(/\b(station|stop|the)\b/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!q) return null;
+  return (
+    stations.find((s) => s.name.toLowerCase() === q) ??
+    stations.find((s) => s.name.toLowerCase().startsWith(q)) ??
+    stations.find((s) => s.name.toLowerCase().includes(q)) ??
+    null
+  );
+}
+
+/** Pull a likely station name out of a status question ("is the elevator at Park Street working?"). */
+function extractStationPhrase(message: string): string {
+  return message
+    .replace(/\b(is|are|the|elevator|elevators|escalator|lift|ramp|at|in|on|working|out of service|broken|down|status|accessible|usable|right now|now|step[\s-]?free|wheelchair|\?)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** A station-status answer: "is X working / accessible?" */
+async function stationStatusReply(message: string, origin: string): Promise<Response | null> {
+  if (!STATUS_RE.test(message) || BROKEN_NOW_RE.test(message)) return null;
+  let data;
+  try {
+    data = getStaticData();
+  } catch {
+    return Response.json({ ok: false, reply: 'Station data is not available right now. Try again in a moment.' });
+  }
+  const phrase = extractStationPhrase(message);
+  const station = matchStation(phrase, data.stations);
+  if (!station) return null; // no station named — let other intents try
+
+  try {
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(origin));
+    const detail = stationDetail(data, station.id, live.alerts, live.closedFacilityIds);
+    if (!detail) return Response.json({ ok: false, reply: `I couldn't find ${station.name}.` });
+    const st = detail.status;
+    const brokenFacs = detail.facilities.filter((f) => f.closed);
+    if (st.stepFree) {
+      return Response.json({
+        ok: true,
+        stationStatus: true,
+        reply: `♿ ${station.name} is step-free right now. ${brokenFacs.length ? `(${brokenFacs.length} piece(s) of equipment flagged, but a step-free path still exists.)` : 'No elevator or ramp closures reported.'}`,
+      });
+    }
+    const names = brokenFacs.map((f) => f.name).filter(Boolean).slice(0, 3);
+    const detailStr = names.length ? ` Affected: ${names.join(', ')}.` : '';
+    return Response.json({
+      ok: true,
+      stationStatus: true,
+      reply: `⚠️ ${station.name} is NOT step-free right now — broken equipment blocks a step-free path.${detailStr} Confirm with the MBTA before you travel.`,
+    });
+  } catch {
+    return Response.json({ ok: false, reply: 'Live status is unavailable right now. Try again shortly.' });
+  }
+}
+
+/** A "what's broken now?" answer: list current elevator/escalator closures. */
+async function brokenNowReply(message: string, origin: string): Promise<Response | null> {
+  if (!BROKEN_NOW_RE.test(message)) return null;
+  let data;
+  try {
+    data = getStaticData();
+  } catch {
+    return Response.json({ ok: false, reply: 'Station data is not available right now.' });
+  }
+  try {
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(origin));
+    const blocked = data.stations
+      .map((s) => ({ s, st: stationDetail(data, s.id, live.alerts, live.closedFacilityIds)?.status }))
+      .filter((x) => x.st && !x.st.stepFree && x.st.blockedBy.length > 0)
+      .map((x) => x.s.name);
+    if (!blocked.length) {
+      return Response.json({ ok: true, brokenNow: true, reply: '✅ Good news — no stations are blocked by broken step-free equipment right now.' });
+    }
+    const list = blocked.slice(0, 8).join(', ');
+    const more = blocked.length > 8 ? ` …and ${blocked.length - 8} more.` : '';
+    return Response.json({
+      ok: true,
+      brokenNow: true,
+      reply: `⚠️ ${blocked.length} station(s) are not step-free right now: ${list}.${more}`,
+    });
+  } catch {
+    return Response.json({ ok: false, reply: 'Live outage data is unavailable right now. Try again shortly.' });
+  }
+}
+
+/** Build a plain-text reply for a step-free train route. No LLM needed. */
+async function stepFreeReply(message: string, origin: string): Promise<Response | null> {
+  if (!STEP_FREE_RE.test(message)) return null; // not a step-free request — let the bike flow handle it
+
+  const places = parseFromTo(message.replace(STEP_FREE_RE, ' '));
+  if (!places?.from || !places?.to) {
+    return Response.json({
+      ok: false,
+      reply: 'For a step-free trip, tell me both stations, e.g. "step-free from Alewife to Downtown Crossing".',
+    });
+  }
+
+  let data;
+  try {
+    data = getStaticData();
+  } catch {
+    return Response.json({ ok: false, reply: 'Station data is not available right now. Try again in a moment.' });
+  }
+
+  const fromStation = matchStation(places.from, data.stations);
+  const toStation = matchStation(places.to, data.stations);
+  if (!fromStation || !toStation) {
+    const missing = !fromStation ? places.from : places.to;
+    return Response.json({ ok: false, reply: `I couldn't find a subway station matching "${missing}". Try the exact station name.` });
+  }
+
+  try {
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(origin));
+    const plan = planWithClosures(data, fromStation.id, toStation.id, live.closedFacilityIds, parseClosedParam(null) ?? []);
+    if (!plan.ok) {
+      const why =
+        plan.reason === 'origin-not-step-free'
+          ? `${fromStation.name} is not step-free right now (broken equipment).`
+          : plan.reason === 'destination-not-step-free'
+            ? `${toStation.name} is not step-free right now (broken equipment).`
+            : 'No step-free route is available between those stations right now.';
+      return Response.json({ ok: false, reply: `♿ ${why}`, stepFree: true });
+    }
+    const transfers = plan.transfers === 0 ? 'no changes' : `${plan.transfers} change${plan.transfers > 1 ? 's' : ''}`;
+    const approx = plan.approximate ? ' Times are approximate, from the schedule.' : '';
+    return Response.json({
+      ok: true,
+      stepFree: true,
+      reply: `♿ Step-free route from ${fromStation.name} to ${toStation.name}: about ${plan.minutes} minutes on the train, ${transfers}.${approx}`,
+      plan,
+      from: fromStation,
+      to: toStation,
+    });
+  } catch {
+    return Response.json({ ok: false, reply: 'The step-free route planner is temporarily unavailable. Try again in a moment.' });
+  }
+}
 
 const UA = 'HackachusettsLastMile/1.0 (safe-route chatbot)';
 const BOS_VIEWBOX = '-71.20,42.20,-70.98,42.45'; // lon,lat,lon,lat
@@ -105,13 +276,13 @@ function decodePolyline6(str: string): LngLat[] {
   return coords;
 }
 
-async function valhalla(a: Geo, b: Geo, excludePolygons?: number[][][]): Promise<WalkRoute[]> {
+async function valhalla(a: Geo, b: Geo, mode: TravelMode = 'walk', excludePolygons?: number[][][]): Promise<WalkRoute[]> {
   const body: Record<string, unknown> = {
     locations: [
       { lat: a.lat, lon: a.lng },
       { lat: b.lat, lon: b.lng },
     ],
-    costing: 'bicycle',
+    costing: mode === 'bike' ? 'bicycle' : 'pedestrian',
     alternates: 3,
     directions_options: { units: 'kilometers' },
   };
@@ -155,11 +326,11 @@ async function valhalla(a: Geo, b: Geo, excludePolygons?: number[][][]): Promise
 
 type Trip = { status?: number; summary?: { length?: number; time?: number }; legs?: Array<{ shape?: string }> };
 
-async function osrm(a: Geo, b: Geo): Promise<WalkRoute[]> {
+async function osrm(a: Geo, b: Geo, mode: TravelMode = 'walk'): Promise<WalkRoute[]> {
   const coords = `${a.lng.toFixed(5)},${a.lat.toFixed(5)};${b.lng.toFixed(5)},${b.lat.toFixed(5)}`;
-  // The public OSRM demo only hosts the car/bike/foot "driving" profile reliably;
-  // the bike profile is the closest cycling fallback when Valhalla is down.
-  const url = `https://router.project-osrm.org/route/v1/bike/${coords}?overview=full&geometries=geojson&alternatives=true`;
+  // Public OSRM demo hosts foot + bike profiles; pick to match the requested mode.
+  const profile = mode === 'bike' ? 'bike' : 'foot';
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=full&geometries=geojson&alternatives=true`;
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) });
     if (!res.ok) return [];
@@ -180,6 +351,56 @@ async function osrm(a: Geo, b: Geo): Promise<WalkRoute[]> {
 }
 
 // --------------------------------------------------------------- intent (Gemini)
+type Intent = 'greet' | 'help' | 'broken_now' | 'station_status' | 'step_free' | 'safe_route' | 'unknown';
+type TravelMode = 'bike' | 'walk';
+type Classified = { intent: Intent; station?: string; from?: string; to?: string; mode?: TravelMode };
+
+/**
+ * Classify the user's message into one intent and pull out any place names,
+ * tolerating typos and loose phrasing. Uses Gemini when a key is set; returns
+ * null otherwise so the caller falls back to the keyword rules.
+ */
+async function geminiClassify(message: string): Promise<Classified | null> {
+  if (!geminiUsable(message)) return null;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL?.trim() || 'gemini-flash-latest'}:generateContent?key=${process.env.GEMINI_API_KEY!.trim()}`;
+  const prompt =
+    'You classify messages for a Boston MBTA step-free transit assistant. The user may make typos. ' +
+    'Return STRICT JSON: {"intent": one of ["greet","help","broken_now","station_status","step_free","safe_route","unknown"], ' +
+    '"station": "<a single station name if they ask about one station, else empty>", ' +
+    '"from": "<origin for a trip, else empty>", "to": "<destination for a trip, else empty>", ' +
+    '"mode": "<bike or walk, only for safe_route; default walk>"}. ' +
+    'Rules: greet = hi/hello/good morning. help = what can you do. broken_now = asking what elevators/stations are down now. ' +
+    'station_status = asking if ONE station or its elevator is working/accessible. step_free = wants a wheelchair/no-stairs TRAIN TRIP between two places. ' +
+    'safe_route = wants the safest WALK or BIKE route between two places; set mode="bike" if they mention bike/cycling/riding, else mode="walk". ' +
+    'Fix obvious typos in station names. ' +
+    `Message: ${JSON.stringify(message)}`;
+  try {
+    geminiSpend();
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 2048,
+          // gemini-flash-latest is a "thinking" model that spends output tokens on
+          // internal reasoning; without this the JSON gets truncated mid-object.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const data = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+    const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') ?? '';
+    const p = JSON.parse(text) as Classified;
+    if (!p.intent) return null;
+    return p;
+  } catch {
+    return null; // fall back to keyword rules
+  }
+}
+
 function parseFromTo(text: string): { from: string; to: string } | null {
   const t = ` ${text.trim()} `;
   let m = t.match(/\bfrom\s+(.+?)\s+to\s+(.+?)\s*[?.!]*\s*$/i);
@@ -227,10 +448,10 @@ async function geminiExplain(facts: object): Promise<string | null> {
   if (!key) return null;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL?.trim() || 'gemini-flash-latest'}:generateContent?key=${key}`;
   const prompt =
-    'You are a Boston cycling-safety assistant. Using ONLY these facts (JSON), write a short, ' +
-    'friendly answer (3-5 sentences). Recommend the safest BIKE route, give distance/time, say ' +
-    'whether we routed around high-crash zones, name the riskiest point to watch, and mention the ' +
-    'nearest MBTA stops (useful for bringing a bike or bike-share). Do not invent numbers.\nFacts: ' +
+    'You are a Boston mobility-safety assistant for people who walk, roll (wheelchair) or bike. ' +
+    'Using ONLY these facts (JSON), write a short, friendly answer (3-5 sentences). The facts include "mode" ' +
+    '(walk or bike) — recommend the safest route FOR THAT MODE, give distance/time, name the riskiest point to ' +
+    'watch, and mention the nearest MBTA stops. Do not say you "routed around" anything. Do not invent numbers.\nFacts: ' +
     JSON.stringify(facts);
   try {
     const res = await fetch(url, {
@@ -272,15 +493,66 @@ async function nearestStop(g: Geo): Promise<string | null> {
 export async function POST(request: Request) {
   await connection();
   const body = (await request.json().catch(() => ({}))) as { message?: string };
-  const message = (body.message ?? '').trim();
+  let message = (body.message ?? '').trim();
   if (!message) {
     return Response.json({ reply: 'Ask me for a safe route, e.g. "from Fenway Park to Boston Common".', ok: false });
   }
 
+  const origin = new URL(request.url).origin;
+
+  // When a Gemini key is set, classify first — this tolerates typos and loose
+  // phrasing. We turn the classification into a clean canonical message and let
+  // the existing keyword handlers do the actual work. No key -> this is null and
+  // we fall straight through to the keyword rules below.
+  let routeMode: TravelMode = 'walk';
+  const cls = await geminiClassify(message);
+  if (cls) {
+    if (cls.mode) routeMode = cls.mode;
+    if (cls.intent === 'greet') return Response.json({ ok: true, greeting: true, reply: GREETING_REPLY });
+    if (cls.intent === 'help') return Response.json({ ok: true, help: true, reply: GREETING_REPLY });
+    if (cls.intent === 'broken_now') {
+      const r = await brokenNowReply("what's broken now", origin);
+      if (r) return r;
+    }
+    if (cls.intent === 'station_status' && cls.station) {
+      const r = await stationStatusReply(`is ${cls.station} accessible working`, origin);
+      if (r) return r;
+    }
+    if (cls.intent === 'step_free' && cls.from && cls.to) {
+      const r = await stepFreeReply(`step-free from ${cls.from} to ${cls.to}`, origin);
+      if (r) return r;
+    }
+    // safe_route / unknown fall through to the geocode+route flow below,
+    // using the corrected from/to when the classifier gave them.
+    if ((cls.intent === 'safe_route' || cls.intent === 'unknown') && cls.from && cls.to) {
+      // seed the keyword extractor with a clean "from X to Y" it parses reliably
+      message = `from ${cls.from} to ${cls.to}`;
+    }
+  }
+
+  // Conversational intents (keyword rules), in priority order. Each returns null if it doesn't apply.
+  if (GREETING_RE.test(message) && message.trim().length < 30) {
+    return Response.json({ ok: true, greeting: true, reply: GREETING_REPLY });
+  }
+  if (HELP_RE.test(message)) {
+    return Response.json({ ok: true, help: true, reply: GREETING_REPLY });
+  }
+  const broken = await brokenNowReply(message, origin);
+  if (broken) return broken;
+  const status = await stationStatusReply(message, origin);
+  if (status) return status;
+  const stepFree = await stepFreeReply(message, origin);
+  if (stepFree) return stepFree;
+
   const places = await geminiExtract(message);
   if (!places?.from || !places?.to) {
-    return Response.json({ reply: `I can't help with that. Please tell me where do you want to go.`, ok: false });
-
+    return Response.json({
+      ok: false,
+      reply:
+        "I'm not sure what you need. I can plan a step-free trip, check if a station is accessible, " +
+        'list what\'s broken now, or find a safe walk/bike route. Try "step-free from Alewife to Harvard" ' +
+        'or "is the elevator at Park Street working?".',
+    });
   }
 
   const [from, to] = await Promise.all([geocode(places.from), geocode(places.to)]);
@@ -298,9 +570,12 @@ export async function POST(request: Request) {
 
   // Try to route AROUND the worst risk zones; if that boxes in the path, fall
   // back to plain routing (and report avoided=false honestly).
+  // Keyword fallback for mode when the classifier didn't set it.
+  if (/\b(bike|bicycle|cycl|ride|riding)\b/i.test(message)) routeMode = 'bike';
+
   const excl = spots.length ? riskExclusionPolygons([from.lng, from.lat], [to.lng, to.lat], spots) : [];
-  let plain = (await valhalla(from, to)) ;
-  if (!plain.length) plain = await osrm(from, to);
+  let plain = (await valhalla(from, to, routeMode)) ;
+  if (!plain.length) plain = await osrm(from, to, routeMode);
 
   const bestRisk = (routes: WalkRoute[]) =>
     routes.length && spots.length ? Math.min(...routes.map((x) => scorePath(x.coords, spots).riskTotal)) : Infinity;
@@ -316,7 +591,7 @@ export async function POST(request: Request) {
     // that beats the plain route — don't stop at the first routable one.
     const ks = Array.from(new Set([excl.length, Math.ceil(excl.length / 2), 3, 2, 1].filter((k) => k >= 1 && k <= excl.length)));
     for (const k of ks) {
-      const r = await valhalla(from, to, excl.slice(0, k));
+      const r = await valhalla(from, to, routeMode, excl.slice(0, k));
       if (!r.length) continue; // 442 no-path at this k: relax further
       const risk = bestRisk(r);
       if (risk < chosenRisk) {
@@ -343,6 +618,7 @@ export async function POST(request: Request) {
   const [oStop, dStop] = await Promise.all([nearestStop(from), nearestStop(to)]);
 
   const facts = {
+    mode: routeMode,
     from: from.name,
     to: to.name,
     distance_m: Math.round(safest.distanceM),
@@ -372,6 +648,7 @@ function emptyScore(): RiskScore {
 }
 
 function fallbackReply(f: {
+  mode: TravelMode;
   from: string;
   to: string;
   distance_m: number;
@@ -383,14 +660,10 @@ function fallbackReply(f: {
   mbta_destination_stop: string | null;
 }): string {
   const km = (f.distance_m / 1000).toFixed(1);
+  const verb = f.mode === 'bike' ? '🚲 Safest bike ride' : '🚶 Safest walking route';
   const lines = [
-    `🚲 Safest bike ride from ${f.from} to ${f.to}: about ${km} km (~${f.minutes} min), crash-risk score ${f.risk_score} (lower is safer).`,
+    `${verb} from ${f.from} to ${f.to}: about ${km} km (~${f.minutes} min), crash-risk score ${f.risk_score} (lower is safer).`,
   ];
-  lines.push(
-    f.avoided_high_risk_zones
-      ? 'I routed you around the highest-crash zones in the area.'
-      : "I couldn't fully avoid the high-risk zones here, so take extra care.",
-  );
   if (f.riskiest_point) lines.push(`Watch out near ${f.riskiest_point}.`);
   if (f.mbta_origin_stop && f.mbta_destination_stop) {
     lines.push(`By MBTA: nearest stops are ${f.mbta_origin_stop} (start) and ${f.mbta_destination_stop} (end).`);

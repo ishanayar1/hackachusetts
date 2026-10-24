@@ -64,7 +64,7 @@ export default function ChatWidget({ onRoute }: Props) {
   const [msgs, setMsgs] = useState<Msg[]>([
     {
       role: 'bot',
-      text: "Hi! Ask me for the safest way across Boston and I'll avoid high-crash areas. Try: “from Fenway Park to Boston Common”.",
+      text: "Hi! Ask me for a step-free train trip or the safest way across Boston. Try: “step-free from Alewife to Downtown Crossing”.",
     },
   ]);
   const listRef = useRef<HTMLDivElement>(null);
