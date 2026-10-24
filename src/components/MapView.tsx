@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, NavigationControl, Source, type MapLayerMouseEvent, type MapRef } from 'react-map-gl/maplibre';
 import type { CrashHex, MapFeatureInfo, MapLayerToggles } from '@/lib/ui/api';
 import { crashFilter, hexFromProps, type CrashMode } from '@/lib/ui/format';
-import { addMapIcons, crashIcon, STATION_ICON } from '@/lib/ui/map-icons';
+import { accessIcon, addMapIcons, crashIcon, STATION_ICON } from '@/lib/ui/map-icons';
 import { labelLayerId, skinStyles, type MapSkin } from '@/lib/ui/map-skins';
 
 
@@ -35,17 +35,30 @@ export type MapViewProps = {
   danger?: GeoJSON.FeatureCollection;
   ramps?: GeoJSON.FeatureCollection;
   equity?: GeoJSON.FeatureCollection;
+  /** Elevators, lifts, ramps and doors; closedFacilityIds turn equipment red. */
+  access?: GeoJSON.FeatureCollection;
+  closedFacilityIds?: string[];
   onSelectFeature?: (info: MapFeatureInfo) => void;
 };
 
-const NO_LAYERS: MapLayerToggles = { trains: false, fatal: false, danger: false, equity: false, ramps: false };
+const NO_LAYERS: MapLayerToggles = { trains: false, fatal: false, danger: false, equity: false, ramps: false, access: false };
 const RAMP_LAYERS = ['ramps-points'];
 
 const str = (v: unknown) => (v === null || v === undefined ? '' : String(v));
 const numOrNull = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 
 /** Turn a clicked feature of an optional layer into panel text data. */
-function featureInfo(layerId: string, p: Record<string, unknown>): MapFeatureInfo | null {
+function featureInfo(layerId: string, p: Record<string, unknown>, closed: readonly string[] = []): MapFeatureInfo | null {
+  if (layerId === 'access-points')
+    return {
+      kind: 'access',
+      id: str(p.id),
+      type: str(p.kind),
+      name: str(p.name),
+      stationId: str(p.stationId),
+      approx: p.approx === true,
+      closed: p.kind === 'ENTRANCE' ? p.wheelchair === 2 : closed.includes(str(p.id)),
+    };
   if (layerId === 'vehicles')
     return {
       kind: 'train',
@@ -76,7 +89,7 @@ function featureInfo(layerId: string, p: Record<string, unknown>): MapFeatureInf
 }
 
 /** Click priority among the optional point layers (most specific first). */
-const FEATURE_LAYER_ORDER = ['vehicles', 'fatal-points', 'danger-points', ...RAMP_LAYERS];
+const FEATURE_LAYER_ORDER = ['vehicles', 'access-points', 'fatal-points', 'danger-points', ...RAMP_LAYERS];
 
 // "zoom" stays at the top level of these expressions (MapLibre rejects it nested in arithmetic).
 const TRAIN_RADIUS = ['interpolate', ['linear'], ['zoom'], 10, 3.5, 13, 5, 16, 7];
@@ -84,6 +97,8 @@ const POINT_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 10, 0.6, 13, 0.8, 
 const STATION_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 10, 0.6, 13, 0.85, 16, 1.1];
 
 const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+const NO_IDS: string[] = [];
+const ACCESS_ICON_SIZE = ['interpolate', ['linear'], ['zoom'], 14, 0.7, 17, 1];
 
 const STATION_LAYERS = ['stations-icons'];
 
@@ -102,6 +117,8 @@ export default function MapView(props: MapViewProps) {
     props;
   const layers = props.layers ?? NO_LAYERS;
   const { onSelectFeature } = props;
+  const closedIds = props.closedFacilityIds ?? NO_IDS;
+  const accessIconExpr = useMemo(() => accessIcon(closedIds), [closedIds]);
   const mapRef = useRef<MapRef>(null);
   const skin = props.skin ?? 'light';
   const styles = useMemo(() => skinStyles(skin), [skin]);
@@ -159,7 +176,7 @@ export default function MapView(props: MapViewProps) {
       if (onSelectFeature) {
         for (const id of FEATURE_LAYER_ORDER) {
           const f = feats.find((x) => x.layer.id === id);
-          const info = f ? featureInfo(id, (f.properties ?? {}) as Record<string, unknown>) : null;
+          const info = f ? featureInfo(id, (f.properties ?? {}) as Record<string, unknown>, closedIds) : null;
           if (info) {
             onSelectFeature(info);
             return;
@@ -175,7 +192,7 @@ export default function MapView(props: MapViewProps) {
       const info = ej && onSelectFeature ? featureInfo('equity-fill', (ej.properties ?? {}) as Record<string, unknown>) : null;
       if (info) onSelectFeature?.(info);
     },
-    [onSelectStation, onSelectHex, onSelectFeature],
+    [onSelectStation, onSelectHex, onSelectFeature, closedIds],
   );
 
   const vis = (on: boolean) => (on ? ('visible' as const) : ('none' as const));
@@ -186,6 +203,7 @@ export default function MapView(props: MapViewProps) {
         ...(layers.fatal ? ['fatal-points'] : []),
         ...(layers.danger ? ['danger-points'] : []),
         ...(layers.ramps ? RAMP_LAYERS : []),
+        ...(layers.access ? ['access-points'] : []),
         ...(crashMode !== 'off' ? ['crash-points'] : []),
         ...(layers.equity ? ['equity-fill'] : []),
       ]
@@ -490,6 +508,27 @@ export default function MapView(props: MapViewProps) {
                     'text-optional': true,
                   }}
                   paint={{ 'text-color': '#111827', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 }}
+                />
+              </Source>
+              {/* Elevators, lifts, ramps (blue; escalators slate; red with a slash when out of service) and
+                  station doors (green; grey with a slash when not step-free). From zoom 14 to keep the map clear.
+                  Above stations so a broken elevator is never hidden under its station. */}
+              <Source id="access" type="geojson" data={(layers.access && props.access) || EMPTY_FC}>
+                <Layer
+                  id="access-points"
+                  type="symbol"
+                  minzoom={14}
+                  layout={{
+                    visibility: vis(layers.access),
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    'icon-image': accessIconExpr as any,
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                    'icon-size': ACCESS_ICON_SIZE as any,
+                    'icon-allow-overlap': true,
+                    // broken equipment on top
+                    'symbol-sort-key': ['case', ['in', ['get', 'id'], ['literal', closedIds]], 1, 0],
+                  }}
+                  paint={{ 'icon-opacity': ['case', ['get', 'approx'], 0.75, 1] }}
                 />
               </Source>
             </>

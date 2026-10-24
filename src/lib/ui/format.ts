@@ -254,7 +254,15 @@ export const MODEL_BINS = [
 /** The map opens on the model estimate, without the low-risk bin and with every optional layer off. */
 export const DEFAULT_CRASH_MODE: CrashMode = 'model';
 export const MODEL_MIN_SHOWN = MODEL_BINS[1].min;
-export const DEFAULT_LAYERS: MapLayerToggles = { trains: false, fatal: false, danger: false, equity: false, ramps: false };
+export const DEFAULT_LAYERS: MapLayerToggles = {
+  trains: false,
+  fatal: false,
+  danger: false,
+  equity: false,
+  ramps: false,
+  // The one optional layer on by default: step-free equipment is what this app is for.
+  access: true,
+};
 
 /** MapLibre filter for the crash layer: the model hides intersections under MODEL_MIN_SHOWN a year. */
 export function crashFilter(mode: CrashMode): unknown[] | undefined {

@@ -176,7 +176,9 @@ describe('minimal default map', () => {
     expect(crashFilter('recorded')).toBeUndefined();
   });
 
-  it('starts with every optional layer off', () => {
-    expect(Object.values(DEFAULT_LAYERS).every((v) => v === false)).toBe(true);
+  it('starts with every optional layer off except elevators, lifts and doors', () => {
+    const { access, ...rest } = DEFAULT_LAYERS;
+    expect(access).toBe(true);
+    expect(Object.values(rest).every((v) => v === false)).toBe(true);
   });
 });

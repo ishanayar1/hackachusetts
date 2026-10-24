@@ -15,7 +15,7 @@ import type {
 import type { CrashMode } from '@/lib/ui/format';
 import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeojson } from '@/lib/ui/geo';
 import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
-import { DEFAULT_CRASH_MODE, formatClock, isPartial, routeName } from '@/lib/ui/format';
+import { DEFAULT_CRASH_MODE, facilityTypeWord, formatClock, isPartial, routeName } from '@/lib/ui/format';
 import { useMapSkin } from '@/lib/ui/map-skins';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
 import Account from './Account';
@@ -30,7 +30,7 @@ import ChatWidget from './ChatWidget';
 import StationDetails from './StationDetails';
 import Tabs from './Tabs';
 import TripPlanner from './TripPlanner';
-import { btn, Notice, SourceBadge, StarButton } from './ui';
+import { btn, Notice, SourceBadge, StarButton, StateIcon } from './ui';
 import LanguageSwitcher from './LanguageSwitcher';
 import { useT } from '@/lib/i18n';
 
@@ -70,10 +70,12 @@ function MapFeatureCard({
   info,
   byId,
   onClose,
+  onSelectStation,
 }: {
   info: MapFeatureInfo;
   byId: Map<string, Station>;
   onClose: () => void;
+  onSelectStation: (id: string) => void;
 }) {
   const t = useT();
   const tx = (s: string | undefined, fallback: string) => (s === undefined ? fallback : t(s));
@@ -114,6 +116,19 @@ function MapFeatureCard({
       [t('Ramp id'), info.id],
     ];
     source = t('City of Boston curb ramp inventory.');
+  } else if (info.kind === 'access') {
+    const door = info.type === 'ENTRANCE';
+    title = info.name;
+    rows = [
+      [t('Type'), t(door ? 'station door' : facilityTypeWord(info.type))],
+      [
+        t('Status'),
+        t(door ? (info.closed ? 'Not step-free' : 'Step-free') : info.closed ? 'Out of service now' : 'Working'),
+      ],
+      [t('Station'), byId.get(info.stationId)?.name ?? info.stationId],
+      ...(info.approx ? ([[t('Position'), t('Approximate (shown at the station)')]] as [string, string][]) : []),
+    ];
+    source = t(door ? 'MBTA GTFS station entrances.' : 'MBTA facilities, with live elevator and escalator alerts.');
   } else {
     title = t('Environmental-justice neighborhood ({place})', { place: info.municipality || t('block group') });
     rows = [
@@ -128,7 +143,10 @@ function MapFeatureCard({
   return (
     <section aria-label={t('Selected map item')} className="rounded-md border border-slate-400 bg-white p-3 text-sm">
       <div className="flex items-start justify-between gap-2">
-        <h2 className="font-bold text-slate-900">{title}</h2>
+        <h2 className="flex items-center gap-2 font-bold text-slate-900">
+          {info.kind === 'access' && <StateIcon state={info.closed ? 'no' : 'yes'} />}
+          {title}
+        </h2>
         <button type="button" className={btn} onClick={onClose}>
           {t('Close')}
         </button>
@@ -141,6 +159,11 @@ function MapFeatureCard({
           </div>
         ))}
       </dl>
+      {info.kind === 'access' && byId.has(info.stationId) && (
+        <button type="button" className={`${btn} mt-2`} onClick={() => onSelectStation(info.stationId)}>
+          {t('Open {name}', { name: byId.get(info.stationId)!.name })}
+        </button>
+      )}
       <p className="mt-1 text-xs text-slate-700">{source}</p>
     </section>
   );
@@ -178,6 +201,8 @@ export default function LastMileApp() {
   const danger = useStaticFile<DangerReport[]>('/data/safety-concerns.json', layers.danger);
   const ramps = useStaticFile<CurbRamp[]>('/data/ramps.json', layers.ramps);
   const equity = useStaticFile<GeoJSON.FeatureCollection>('/data/ej.geojson', layers.equity);
+  const access = useStaticFile<GeoJSON.FeatureCollection>('/data/access.geojson', layers.access);
+  const closedFacilityIds = status.data?.data.closedFacilityIds;
   const vehiclesFc = useMemo(() => vehiclesGeojson(vehicles.data?.data), [vehicles.data]);
   const fatalFc = useMemo(() => pointsGeojson(fatal.data), [fatal.data]);
   const dangerFc = useMemo(() => pointsGeojson(danger.data), [danger.data]);
@@ -246,8 +271,18 @@ export default function LastMileApp() {
         ? `${n(ramps.data.length)} ramps: ${poor} poor condition, ${lip} lip at the edge, ${both} both.`
         : t('Ramps: {n}. Poor condition: {poor}. Lip at the edge: {lip}. Both: {both}.', { n: n(ramps.data.length), poor, lip, both });
     } else s.ramps = ramps.error ? fail : loading;
+    if (access.data) {
+      const closed = new Set(closedFacilityIds ?? []);
+      const kit = access.data.features.filter((f) => f.properties?.kind !== 'ENTRANCE');
+      const out = kit.filter((f) => closed.has(String(f.properties?.id))).length;
+      s.access = t('{n} elevators, lifts and ramps ({out} out of service now) and {doors} station doors. Zoom in to see them.', {
+        n: n(kit.length),
+        out: n(out),
+        doors: n(access.data.features.length - kit.length),
+      });
+    } else s.access = access.error ? fail : loading;
     return s;
-  }, [t, en, vehicles.data, vehicles.error, fatal.data, fatal.error, danger.data, danger.error, equity.data, equity.error, ramps.data, ramps.error]);
+  }, [t, en, vehicles.data, vehicles.error, fatal.data, fatal.error, danger.data, danger.error, equity.data, equity.error, ramps.data, ramps.error, access.data, access.error, closedFacilityIds]);
 
   // Banner when a saved station loses step-free access (fully or for one platform) between two refreshes.
   const statusRows = status.data?.data.stations;
@@ -341,7 +376,17 @@ export default function LastMileApp() {
           <HexDetails hex={selectedHex} showModel={crashMode === 'model'} onClose={() => setSelectedHex(null)} />
         )}
 
-        {feature && <MapFeatureCard info={feature} byId={byId} onClose={() => setFeature(null)} />}
+        {feature && (
+          <MapFeatureCard
+            info={feature}
+            byId={byId}
+            onClose={() => setFeature(null)}
+            onSelectStation={(id) => {
+              setFeature(null);
+              selectStation(id);
+            }}
+          />
+        )}
 
         <MapKey
           mode={crashMode}
@@ -443,6 +488,8 @@ export default function LastMileApp() {
           danger={dangerFc}
           ramps={rampsFc}
           equity={equity.data}
+          access={access.data}
+          closedFacilityIds={closedFacilityIds}
           onSelectFeature={setFeature}
         />
       </div>

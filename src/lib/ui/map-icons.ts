@@ -13,6 +13,8 @@ const RED = '#b91c1c';
 const GREY = '#6b7280';
 const BROWN = '#9a3412';
 const PURPLE = '#7e22ce';
+const BLUE = '#1d4ed8';
+const SLATE = '#475569';
 
 type Ctx = CanvasRenderingContext2D;
 type Icon = { size?: number; draw: (c: Ctx) => void };
@@ -35,6 +37,28 @@ export function crashIcon(mode: CrashMode): unknown[] {
   const expr: unknown[] = ['step', prop, warnIconName(bins[0].color)];
   for (const b of bins.slice(1)) expr.push(b.min, warnIconName(b.color));
   return expr;
+}
+
+/** MBTA facility types drawn on the map (lowercased into icon names). */
+const ACCESS_KINDS = ['ELEVATOR', 'ESCALATOR', 'PORTABLE_BOARDING_LIFT', 'RAMP', 'ELEVATED_SUBPLATFORM'] as const;
+const accessName = (kind: string) => `lm-${kind.toLowerCase()}`;
+
+/** icon-image expression for access.geojson: doors by wheelchair flag, equipment red when its id is closed. */
+export function accessIcon(closedIds: readonly string[]): unknown[] {
+  const byKind = (suffix: string) => [
+    'match',
+    ['get', 'kind'],
+    ...ACCESS_KINDS.flatMap((k) => [k, accessName(k) + suffix]),
+    accessName('ELEVATOR') + suffix,
+  ];
+  return [
+    'case',
+    ['==', ['get', 'kind'], 'ENTRANCE'],
+    ['match', ['get', 'wheelchair'], 2, 'lm-entrance-no', 'lm-entrance'],
+    ['in', ['get', 'id'], ['literal', [...closedIds]]],
+    byKind('-out'),
+    byKind(''),
+  ];
 }
 
 // ---------- drawing helpers ----------
@@ -106,6 +130,85 @@ function wheelchair(c: Ctx, color: string, scale = 0.8) {
   c.restore();
 }
 
+function slash(c: Ctx, color: string) {
+  c.beginPath();
+  c.moveTo(10, 38);
+  c.lineTo(38, 10);
+  c.lineCap = 'round';
+  c.lineWidth = 4;
+  c.strokeStyle = color;
+  c.stroke();
+}
+
+function triangle(c: Ctx, color: string, x1: number, y1: number, x2: number, y2: number, x3: number, y3: number) {
+  c.beginPath();
+  c.moveTo(x1, y1);
+  c.lineTo(x2, y2);
+  c.lineTo(x3, y3);
+  c.closePath();
+  c.fillStyle = color;
+  c.fill();
+}
+
+/** Glyphs for MBTA accessibility equipment, drawn in white on a colored square. */
+const ACCESS_GLYPH: Record<(typeof ACCESS_KINDS)[number], (c: Ctx) => void> = {
+  ELEVATOR: (c) => {
+    triangle(c, WHITE, 24, 11, 32, 21, 16, 21);
+    triangle(c, WHITE, 16, 27, 32, 27, 24, 37);
+  },
+  ESCALATOR: (c) => {
+    c.beginPath();
+    c.moveTo(11, 35);
+    c.lineTo(18, 35);
+    c.lineTo(30, 16);
+    c.lineTo(37, 16);
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    c.lineWidth = 4.5;
+    c.strokeStyle = WHITE;
+    c.stroke();
+  },
+  PORTABLE_BOARDING_LIFT: (c) => {
+    wheelchair(c, WHITE, 0.6);
+    c.fillStyle = WHITE;
+    c.fillRect(11, 36, 26, 3.5);
+  },
+  RAMP: (c) => rampWedge(c, WHITE),
+  ELEVATED_SUBPLATFORM: (c) => {
+    wheelchair(c, WHITE, 0.55);
+    c.fillStyle = WHITE;
+    c.fillRect(9, 33, 30, 6);
+  },
+};
+
+function equipment(kind: (typeof ACCESS_KINDS)[number], out: boolean): Icon {
+  // Working: blue (escalators slate: they are not step-free). Out of service: red with a slash.
+  const fill = out ? RED : kind === 'ESCALATOR' ? SLATE : BLUE;
+  return {
+    draw: (c) => {
+      square(c, fill, WHITE, 3);
+      ACCESS_GLYPH[kind](c);
+      if (out) slash(c, WHITE);
+    },
+  };
+}
+
+function door(fill: string, blocked: boolean): Icon {
+  return {
+    draw: (c) => {
+      square(c, fill, WHITE, 3);
+      c.lineWidth = 3.5;
+      c.strokeStyle = WHITE;
+      c.strokeRect(16, 11, 16, 26);
+      c.fillStyle = WHITE;
+      c.beginPath();
+      c.arc(28, 25, 2, 0, Math.PI * 2);
+      c.fill();
+      if (blocked) slash(c, '#fca5a5');
+    },
+  };
+}
+
 function warnSign(fill: string): Icon {
   return {
     draw: (c) => {
@@ -162,6 +265,14 @@ const ICONS: Record<string, Icon> = {
   ...Object.fromEntries(
     [...new Set([...Object.values(ROUTE_COLORS), '#1d4ed8'])].map((col) => [arrowIconName(col), arrow(col)]),
   ),
+  ...Object.fromEntries(
+    ACCESS_KINDS.flatMap((k) => [
+      [accessName(k), equipment(k, false)],
+      [accessName(k) + '-out', equipment(k, true)],
+    ]),
+  ),
+  'lm-entrance': door(GREEN, false),
+  'lm-entrance-no': door(GREY, true),
   'lm-fatal': {
     draw: (c) => {
       circle(c, 19, INK, WHITE, 3);

@@ -71,7 +71,15 @@ export type EjBlockGroup = {
 };
 
 /** Optional map layers (toggled in the map key). */
-export type MapLayerToggles = { trains: boolean; fatal: boolean; danger: boolean; equity: boolean; ramps: boolean };
+export type MapLayerToggles = {
+  trains: boolean;
+  fatal: boolean;
+  danger: boolean;
+  equity: boolean;
+  ramps: boolean;
+  /** Elevators, lifts, ramps and doors (public/data/access.geojson). */
+  access: boolean;
+};
 
 /** What the user clicked on an optional map layer; shown as text in the panel. */
 export type MapFeatureInfo =
@@ -87,7 +95,18 @@ export type MapFeatureInfo =
   | ({ kind: 'fatal' } & Omit<FatalCrash, 'lat' | 'lon'>)
   | ({ kind: 'danger' } & Omit<DangerReport, 'lat' | 'lon'>)
   | ({ kind: 'ramp' } & Omit<CurbRamp, 'lat' | 'lon'>)
-  | ({ kind: 'equity' } & EjBlockGroup);
+  | ({ kind: 'equity' } & EjBlockGroup)
+  | {
+      kind: 'access';
+      id: string;
+      /** MBTA facility type, or 'ENTRANCE' for a station door. */
+      type: string;
+      name: string;
+      stationId: string;
+      approx: boolean;
+      /** Facilities: out of service now. Doors: not step-free. */
+      closed: boolean;
+    };
 
 export class HttpError extends Error {
   constructor(

@@ -46,7 +46,24 @@ export function WarnSym({ fill }: { fill: string }) {
   );
 }
 
+function AccessSym({ fill, glyph, out }: { fill: string; glyph: ReactNode; out?: boolean }) {
+  return (
+    <Sym>
+      <rect x="2.5" y="2.5" width="15" height="15" rx="3.5" fill={fill} stroke="#fff" strokeWidth="1.2" />
+      {glyph}
+      {out && <path d="M5 15 L15 5" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />}
+    </Sym>
+  );
+}
+const ELEV_GLYPH = <path d="M10 5 L13 9 H7 Z M7 11 H13 L10 15 Z" fill="#fff" />;
+const DOOR_GLYPH = <rect x="7" y="5" width="6" height="10" fill="none" stroke="#fff" strokeWidth="1.4" />;
+
 const LAYER_ROWS: { id: keyof MapLayerToggles; label: string; symbol: ReactNode }[] = [
+  {
+    id: 'access',
+    label: 'Elevators, lifts, ramps and station doors (zoom in to see them)',
+    symbol: <AccessSym fill="#1d4ed8" glyph={ELEV_GLYPH} />,
+  },
   {
     id: 'trains',
     label: 'Trains (live, updated every 15 s)',
@@ -99,6 +116,31 @@ const LAYER_ROWS: { id: keyof MapLayerToggles; label: string; symbol: ReactNode 
 
 /** Extra legend lines shown under a layer while it is on. */
 const LAYER_NOTES: Partial<Record<keyof MapLayerToggles, (t: T) => ReactNode>> = {
+  access: (t) => (
+    <ul className="space-y-1">
+      <li className="flex items-center gap-2">
+        <AccessSym fill="#1d4ed8" glyph={ELEV_GLYPH} />
+        {t('Blue: elevator, lift or ramp working')}
+      </li>
+      <li className="flex items-center gap-2">
+        <AccessSym fill="#b91c1c" glyph={ELEV_GLYPH} out />
+        {t('Red with a slash: out of service now')}
+      </li>
+      <li className="flex items-center gap-2">
+        <AccessSym fill="#475569" glyph={<path d="M5 14 H8 L12 7 H15" stroke="#fff" strokeWidth="1.6" fill="none" />} />
+        {t('Grey-blue: escalator (not step-free)')}
+      </li>
+      <li className="flex items-center gap-2">
+        <AccessSym fill="#047857" glyph={DOOR_GLYPH} />
+        {t('Green door: step-free station entrance')}
+      </li>
+      <li className="flex items-center gap-2">
+        <AccessSym fill="#6b7280" glyph={DOOR_GLYPH} out />
+        {t('Grey door with a slash: entrance with stairs')}
+      </li>
+      <li>{t('Faded icons are placed at the station because MBTA gives no exact spot.')}</li>
+    </ul>
+  ),
   trains: (t) => t('Dot in the line color with a white outline; the arrow (from zoom 11) points the way the train is going.'),
   fatal: (t) => t('Black circle with a white cross. Recorded fatal crashes, not a prediction. Tap one for date and place.'),
   danger: (t) => t('Purple square with a white !. Reports from residents, not verified crashes. Tap one for the concern.'),
