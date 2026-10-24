@@ -4,6 +4,9 @@ import { redirect } from 'next/navigation';
 import { auth, socialProviders } from '@/lib/server/auth';
 import LoginForm from './LoginForm';
 
+// Reads the session cookie on every request and redirects on the server, so this page blocks (no static shell).
+export const instant = false;
+
 export const metadata: Metadata = { title: 'Sign in · LastMile' };
 
 export default async function LoginPage() {

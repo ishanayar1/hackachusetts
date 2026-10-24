@@ -15,6 +15,13 @@ const r5 = (n: number) => Math.round(n * 1e5) / 1e5;
 const inBoston = (lat: number, lon: number) =>
   lat >= BOSTON_BBOX.minLat && lat <= BOSTON_BBOX.maxLat && lon >= BOSTON_BBOX.minLon && lon <= BOSTON_BBOX.maxLon;
 
+/** "1, Beacon Street, Back Bay, Boston, ..." -> "1 Beacon Street, Back Bay, Boston" */
+function shortLabel(displayName: string): string {
+  const parts = displayName.split(',').map((x) => x.trim()).filter(Boolean);
+  if (parts.length > 1 && /^\d+[A-Za-z-]*$/.test(parts[0])) parts.splice(0, 2, `${parts[0]} ${parts[1]}`);
+  return parts.slice(0, 3).join(', ');
+}
+
 export async function geocode(q: string, deps: { fetch?: FetchLike; noCache?: boolean } = {}): Promise<GeoHit[]> {
   const key = q.trim().toLowerCase();
   const hit = deps.noCache ? undefined : cache.get(key);
@@ -30,12 +37,14 @@ export async function geocode(q: string, deps: { fetch?: FetchLike; noCache?: bo
     if (Array.isArray(body)) {
       hits = body
         .map((r: { display_name?: unknown; lat?: unknown; lon?: unknown }) => ({
-          label: String(r.display_name ?? '').split(',').slice(0, 3).join(',').trim(),
+          label: shortLabel(String(r.display_name ?? '')),
           lat: Number(r.lat),
           lon: Number(r.lon),
         }))
         .filter((h) => h.label && Number.isFinite(h.lat) && Number.isFinite(h.lon) && inBoston(h.lat, h.lon))
-        .map((h) => ({ ...h, lat: r5(h.lat), lon: r5(h.lon) }));
+        .map((h) => ({ ...h, lat: r5(h.lat), lon: r5(h.lon) }))
+        // one row per label: the user cannot tell two "100 Cambridge Street" rows apart
+        .filter((h, i, all) => all.findIndex((o) => o.label === h.label) === i);
     }
   } catch {
     return []; // upstream down: not cached, so the next search tries again

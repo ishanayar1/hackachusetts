@@ -14,6 +14,17 @@ describe('geocode', () => {
     ]);
   });
 
+  it('joins a house number to its street and drops duplicate places', async () => {
+    const fetch = reply([
+      { display_name: '1, Beacon Street, Cleveland Circle, Brighton, Boston', lat: '42.33213', lon: '-71.15855' },
+      { display_name: '1, Beacon Street, Cleveland Circle, Brighton, Boston', lat: '42.33213', lon: '-71.15855' },
+      { display_name: '1, Beacon Street, Cleveland Circle, Brighton, Boston', lat: '42.33220', lon: '-71.15850' },
+    ]);
+    expect(await geocode('1 beacon', { fetch, noCache: true })).toEqual([
+      { label: '1 Beacon Street, Cleveland Circle, Brighton', lat: 42.33213, lon: -71.15855 },
+    ]);
+  });
+
   it('asks Nominatim for Greater Boston only', async () => {
     let url = '';
     const fetch = async (u: string) => {
