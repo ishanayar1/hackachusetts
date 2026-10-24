@@ -8,6 +8,7 @@ import { routeGeojson, stationsGeojson, walkGeojson } from '@/lib/ui/geo';
 import { useStations, useStationsStatus } from '@/lib/ui/hooks';
 import { isPartial } from '@/lib/ui/format';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
+import Account from './Account';
 import BrokenNow from './BrokenNow';
 import CrashSpots from './CrashSpots';
 import HexDetails from './HexDetails';
@@ -75,9 +76,12 @@ export default function LastMileApp() {
 
   return (
     <div className="app-shell bg-slate-50 text-slate-900">
-      <header className="app-header border-b border-slate-300 bg-white px-4 py-2">
-        <h1 className="text-xl font-extrabold tracking-tight text-slate-900">LastMile</h1>
-        <p className="text-sm text-slate-700">Step-free MBTA trips</p>
+      <header className="app-header flex items-center justify-between gap-3 border-b border-slate-300 bg-white px-4 py-2">
+        <div>
+          <h1 className="text-xl font-extrabold tracking-tight text-slate-900">LastMile</h1>
+          <p className="text-sm text-slate-700">Step-free MBTA trips</p>
+        </div>
+        <Account />
       </header>
 
       <main className="app-panel space-y-3 px-4 py-3" aria-label="Trip tools">

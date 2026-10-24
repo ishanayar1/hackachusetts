@@ -2,6 +2,7 @@
 // "My stations": starred stations with step-free status now and any active accessibility alert.
 import type { Station, StationStatusRow } from '@/lib/ui/api';
 import { ACCESS_EFFECTS, alertActive, effectLabel, partialLines, stepFreeState } from '@/lib/ui/format';
+import { authClient } from '@/lib/ui/auth-client';
 import { useAlerts, useFacilities } from '@/lib/ui/hooks';
 import { StarButton, StateText } from './ui';
 
@@ -19,6 +20,7 @@ export default function MyStations({
   onToggle: (id: string) => void;
 }) {
   const { data } = useAlerts();
+  const { data: session } = authClient.useSession();
   const { byId: facilities } = useFacilities();
   const alerts = (data?.data.alerts ?? []).filter(
     (a) => !a.informational && alertActive(a) && ACCESS_EFFECTS.has(a.effect),
@@ -33,7 +35,8 @@ export default function MyStations({
       </h2>
       {saved.length === 0 ? (
         <p className="mt-1 text-sm text-slate-800">
-          No saved stations yet. Open a station and choose Save to see it here. Saved on this device only.
+          No saved stations yet. Open a station and choose Save to see it here.
+          {!session && ' Sign in to keep them on every device.'}
         </p>
       ) : (
         <ul className="mt-2 space-y-2">

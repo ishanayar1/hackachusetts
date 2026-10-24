@@ -10,7 +10,8 @@ Requires Node 22+.
 
 ```bash
 npm ci
-echo "MBTA_API_KEY=your-key" > .env
+cp .env.example .env   # fill in MBTA_API_KEY, DATABASE_URL, BETTER_AUTH_SECRET
+npm run db:migrate     # creates the user / session / account / verification tables
 npm run dev            # http://localhost:3000
 ```
 
@@ -19,14 +20,24 @@ npm run dev            # http://localhost:3000
 | Name | Required | Notes |
 |---|---|---|
 | `MBTA_API_KEY` | Recommended | MBTA V3 API key ([get one free](https://api-v3.mbta.com/)). The code also accepts a variable named `mbta`. Without a key the app still works with lower MBTA rate limits. Server-only: never prefix it with `NEXT_PUBLIC_`. |
+| `DATABASE_URL` | Yes, for sign-in | Postgres connection string. Use a free [Neon](https://neon.tech) database (pooled connection string) both locally and on Vercel. |
+| `BETTER_AUTH_SECRET` | Yes, for sign-in | Random 32+ characters: `openssl rand -base64 32`. Use a different value in production. |
+| `BETTER_AUTH_URL` | Yes, for sign-in | `http://localhost:3000` locally; the production URL on Vercel. |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Optional | Shows "Continue with Google". Redirect URI: `<BETTER_AUTH_URL>/api/auth/callback/google`. |
+| `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` | Optional | Shows "Continue with GitHub". Callback URL: `<BETTER_AUTH_URL>/api/auth/callback/github`. |
 
-Put it in `.env` (or `.env.local`). Both are gitignored; never commit a key.
+Put them in `.env` (or `.env.local`). Both are gitignored; never commit a key. `.env.example` lists every variable.
+
+### Accounts
+
+[Better Auth](https://better-auth.com) handles sign-in (`/login`, API under `/api/auth/*`): email + password, plus Google and GitHub when their keys are set. Users, sessions and each user's starred stations (`user.myStations`) are stored in Postgres. Signed-out visitors keep stars in localStorage; on first sign-in on a device those stars merge into the account. Run `npm run db:migrate` after changing the auth config in `src/lib/server/auth.ts`.
 
 ### npm scripts
 
 | Script | What it does |
 |---|---|
 | `npm run dev` | Dev server on port 3000 |
+| `npm run db:migrate` | Create or update the Better Auth tables in `DATABASE_URL` |
 | `npm run build` / `npm start` | Production build / serve |
 | `npm test` | Unit and property-based tests (Vitest + fast-check) |
 | `npm run typecheck` | `next typegen` + `tsc --noEmit` |
@@ -58,7 +69,7 @@ Note: phones need HTTPS for location, so use the Vercel link (not a LAN Docker U
 
 1. In the Vercel dashboard, choose **Add New > Project** and import the GitHub repo `ishanayar1/hackachusetts`.
 2. Framework preset: **Next.js** (defaults for build command and output are fine; no `vercel.json` needed).
-3. Under **Environment Variables**, add `MBTA_API_KEY` with your MBTA V3 key (Production and Preview).
+3. Under **Environment Variables**, add `MBTA_API_KEY` with your MBTA V3 key, plus `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (your production URL) and any Google / GitHub keys (Production and Preview). Add the production callback URLs to the Google and GitHub OAuth apps.
 4. Click **Deploy**.
 
 `public/data/` is committed, so the build needs no downloads. API routes read those files at runtime; `next.config.ts` ships them with the functions via `outputFileTracingIncludes`. `output: 'standalone'` is only used by Docker and is ignored by Vercel.
