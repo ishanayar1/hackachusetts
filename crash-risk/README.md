@@ -87,3 +87,5 @@ Police-reported crash data reflects reporting/patrol bias, not ground truth.
 Mid-block crashes (the CSV's `Street` rows, ~48%) are excluded; only
 intersection crashes are modeled. Raw counts conflate "dangerous" with "busy"; normalizing by traffic/pedestrian
 volume would be the next step. The model predicts risk, not individual events.
+
+
