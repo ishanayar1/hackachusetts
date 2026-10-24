@@ -61,3 +61,11 @@ def test_export_geojson_writes_points(tmp_path):
     feat = json.loads(out.read_text())["features"][0]
     assert feat["geometry"] == {"type": "Point", "coordinates": [-71.06, 42.3]}
     assert feat["properties"]["site"] == "A ST & B ST"
+
+
+def test_split_train_test_drops_sites_unknown_at_train_end():
+    m = pd.to_datetime(["2024-11-01", "2025-02-01"])
+    panel = pd.DataFrame({"site": ["A", "A", "B", "B"], "month": list(m) * 2,
+                          "crashes": [1, 0, 0, 2]})
+    tr, te = P.split_train_test(panel)
+    assert set(tr["site"]) == {"A"} and set(te["site"]) == {"A"}

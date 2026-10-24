@@ -163,7 +163,9 @@
         `Historic: ${p.total_crashes} crashes ` +
         `(🚗 ${p.mv} · 🚶 ${p.ped} · 🚲 ${p.bike})<br/>` +
         `Last 12 months: ${p.last12}<br/>` +
-        `Most crashes: ${esc(p.peak_day)}s around ${hour12(p.peak_hour)}<br/>` +
+        // a "most common" day/hour means nothing for 1-2 crashes
+        (p.total_crashes >= 3 ?
+          `Most crashes: ${esc(p.peak_day)}s around ${hour12(p.peak_hour)}<br/>` : "") +
         `<span style="color:#666">On record ${esc(p.first)} → ${esc(p.last)}</span>`;
     }
 

@@ -243,10 +243,18 @@ FEATURES = [
 # ----------------------------------------------------------------------------
 # 4. Train / evaluate (past -> future split)
 # ----------------------------------------------------------------------------
-def train(panel: pd.DataFrame):
+def split_train_test(panel: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Past/future split over the sites knowable at TRAIN_END (>= 1 training
+    crash); sites that first appear later would be chosen using the future."""
     train_end = pd.Timestamp(TRAIN_END, tz=None)
-    tr = panel[panel["month"] <= train_end]
-    te = panel[panel["month"] > train_end]
+    past = panel["month"] <= train_end
+    known = panel.loc[past & (panel["crashes"] > 0), "site"].unique()
+    p = panel["site"].isin(known)
+    return panel[p & past], panel[p & ~past]
+
+
+def train(panel: pd.DataFrame):
+    tr, te = split_train_test(panel)
 
     X_tr, y_tr = tr[FEATURES], tr["crashes"]
     X_te, y_te = te[FEATURES], te["crashes"]

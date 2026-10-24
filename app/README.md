@@ -20,9 +20,10 @@ month ahead, combining:
 
 The model is a Poisson gradient-boosted regressor (scikit-learn
 `HistGradientBoostingRegressor`) predicting crash count per intersection-month.
-It is trained on 2015-2024 and evaluated on the held-out future (2025-2026):
-deviance is 24% below a per-intersection-average baseline, and its top-10%
-riskiest intersections capture ~48% of actual future crashes.
+It is trained on 2015-2024 and evaluated on the held-out future (2025-2026),
+over intersections that had at least one crash by end of 2024: deviance is
+~3% below a per-intersection-average baseline, and its top-10% riskiest
+intersections capture ~51% of actual future crashes.
 
 Each intersection also carries details for the map: neighborhood (from cached
 OpenStreetMap Nominatim labels in `geocache.json`, no network calls), crashes
