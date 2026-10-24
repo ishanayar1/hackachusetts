@@ -3,8 +3,8 @@
 // All overlays are GeoJSON sources + layers. Everything shown here is also listed as text in the panel.
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { setWorkerUrl } from 'maplibre-gl';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import Map, { Layer, NavigationControl, Source, type MapLayerMouseEvent, type MapRef } from 'react-map-gl/maplibre';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import Map, { Layer, NavigationControl, Popup, Source, type MapLayerMouseEvent, type MapRef } from 'react-map-gl/maplibre';
 import type { CrashHex, MapFeatureInfo, MapLayerToggles } from '@/lib/ui/api';
 import { crashFilter, hexFromProps, type CrashMode } from '@/lib/ui/format';
 import { accessIcon, addMapIcons, crashIcon, STATION_ICON } from '@/lib/ui/map-icons';
@@ -43,6 +43,13 @@ export type MapViewProps = {
   access?: GeoJSON.FeatureCollection;
   closedFacilityIds?: string[];
   onSelectFeature?: (info: MapFeatureInfo) => void;
+  /** A tap on empty map gives its spot; a tap on anything else, or closing the popup, gives null. */
+  onPickPlace?: (p: { lat: number; lon: number } | null) => void;
+  /** The tapped spot and the popup shown there (directions choices). */
+  pin?: { lat: number; lon: number } | null;
+  pinContent?: ReactNode;
+  /** Trip start / end places and the tapped spot: points with role 'start' | 'end' | 'pin'. */
+  places?: GeoJSON.FeatureCollection;
 };
 
 const NO_LAYERS: MapLayerToggles = { trains: false, fatal: false, danger: false, equity: false, ramps: false, access: false };
@@ -120,7 +127,7 @@ export default function MapView(props: MapViewProps) {
   const { stations, route, walk, bikeRoute, crashMode, selectedStationId, selectedHex, flyTo, onSelectStation, onSelectHex } =
     props;
   const layers = props.layers ?? NO_LAYERS;
-  const { onSelectFeature } = props;
+  const { onSelectFeature, onPickPlace, pin } = props;
   const closedIds = props.closedFacilityIds ?? NO_IDS;
   const accessIconExpr = useMemo(() => accessIcon(closedIds), [closedIds]);
   const mapRef = useRef<MapRef>(null);
@@ -169,13 +176,25 @@ export default function MapView(props: MapViewProps) {
     else mapRef.current.flyTo({ ...opts, duration: 1200 });
   }, [flyTo]);
 
-  const onClick = useCallback(
-    (e: MapLayerMouseEvent) => {
-      const feats = e.features ?? [];
+  // A short map (phones) may have no room above or below the tapped spot for its popup: move the spot down first.
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!pin || !map) return;
+    const h = map.getContainer().clientHeight;
+    const y = map.project([pin.lon, pin.lat]).y;
+    const POPUP_ROOM = 240;
+    if (y >= POPUP_ROOM || h - y >= POPUP_ROOM) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    map.easeTo({ center: [pin.lon, pin.lat], offset: [0, h / 2 - 40], duration: reduce ? 0 : 400 });
+  }, [pin]);
+
+  /** Select whatever was tapped; false when nothing selectable was under the tap. */
+  const selectTapped = useCallback(
+    (feats: NonNullable<MapLayerMouseEvent['features']>): boolean => {
       const st = feats.find((f) => STATION_LAYERS.includes(f.layer.id));
       if (st?.properties?.id) {
         onSelectStation(String(st.properties.id));
-        return;
+        return true;
       }
       if (onSelectFeature) {
         for (const id of FEATURE_LAYER_ORDER) {
@@ -183,20 +202,29 @@ export default function MapView(props: MapViewProps) {
           const info = f ? featureInfo(id, (f.properties ?? {}) as Record<string, unknown>, closedIds) : null;
           if (info) {
             onSelectFeature(info);
-            return;
+            return true;
           }
         }
       }
       const hex = feats.find((f) => f.layer.id === 'crash-points');
       if (hex?.properties) {
         onSelectHex(hexFromProps(hex.properties as Record<string, unknown>));
-        return;
+        return true;
       }
       const ej = feats.find((f) => f.layer.id === 'equity-fill');
       const info = ej && onSelectFeature ? featureInfo('equity-fill', (ej.properties ?? {}) as Record<string, unknown>) : null;
       if (info) onSelectFeature?.(info);
+      return !!info;
     },
     [onSelectStation, onSelectHex, onSelectFeature, closedIds],
+  );
+
+  const onClick = useCallback(
+    (e: MapLayerMouseEvent) => {
+      if (selectTapped(e.features ?? [])) onPickPlace?.(null);
+      else onPickPlace?.({ lat: e.lngLat.lat, lon: e.lngLat.lng });
+    },
+    [selectTapped, onPickPlace],
   );
 
   const vis = (on: boolean) => (on ? ('visible' as const) : ('none' as const));
@@ -538,6 +566,46 @@ export default function MapView(props: MapViewProps) {
                   paint={{ 'text-color': '#111827', 'text-halo-color': '#ffffff', 'text-halo-width': 1.5 }}
                 />
               </Source>
+              {/* Trip start: green dot. Trip end: red ring with a white center. Tapped spot: blue dot.
+                  The places are also named in the trip panel. */}
+              <Source id="places" type="geojson" data={props.places ?? EMPTY_FC}>
+                <Layer
+                  id="place-start"
+                  type="circle"
+                  filter={['==', ['get', 'role'], 'start']}
+                  paint={{ 'circle-radius': 7, 'circle-color': '#15803d', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 }}
+                />
+                <Layer
+                  id="place-end"
+                  type="circle"
+                  filter={['==', ['get', 'role'], 'end']}
+                  paint={{ 'circle-radius': 9, 'circle-color': '#b91c1c', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 }}
+                />
+                <Layer
+                  id="place-end-dot"
+                  type="circle"
+                  filter={['==', ['get', 'role'], 'end']}
+                  paint={{ 'circle-radius': 3, 'circle-color': '#ffffff' }}
+                />
+                <Layer
+                  id="place-pin"
+                  type="circle"
+                  filter={['==', ['get', 'role'], 'pin']}
+                  paint={{ 'circle-radius': 7, 'circle-color': '#1d4ed8', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 3 }}
+                />
+              </Source>
+              {pin && (
+                <Popup
+                  longitude={pin.lon}
+                  latitude={pin.lat}
+                  offset={14}
+                  maxWidth="260px"
+                  closeOnClick={false}
+                  onClose={() => onPickPlace?.(null)}
+                >
+                  {props.pinContent}
+                </Popup>
+              )}
               {/* Elevators, lifts, ramps (blue; escalators slate; red with a slash when out of service) and
                   station doors (green; grey with a slash when not step-free). From zoom 14 to keep the map clear.
                   Above stations so a broken elevator is never hidden under its station. */}

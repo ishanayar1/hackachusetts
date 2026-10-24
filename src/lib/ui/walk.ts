@@ -25,7 +25,8 @@ export type WalkResult = {
   distanceM: number;
   minutes: number;
   coordinates: [number, number][]; // [lon, lat]
-  steps: { instruction: string; distanceM: number }[];
+  /** lat/lon: where the step starts (absent on older cached routes). */
+  steps: { instruction: string; distanceM: number; lat?: number; lon?: number }[];
   approximate: boolean;
   warnings?: WalkWarnings;
 };
