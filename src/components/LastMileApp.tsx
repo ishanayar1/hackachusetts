@@ -16,6 +16,7 @@ import type { CrashMode } from '@/lib/ui/format';
 import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeojson } from '@/lib/ui/geo';
 import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
 import { DEFAULT_CRASH_MODE, formatClock, isPartial, routeName } from '@/lib/ui/format';
+import { useMapSkin } from '@/lib/ui/map-skins';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
 import Account from './Account';
 import BrokenNow from './BrokenNow';
@@ -157,6 +158,7 @@ export default function LastMileApp() {
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
   const [walkLines, setWalkLines] = useState<[number, number][][] | null>(null);
   const mine = useMyStations();
+  const [skin, setSkin] = useMapSkin();
   const [banner, setBanner] = useState<string[]>([]);
   const prevStepFree = useRef<Map<string, StepFreeLevel> | null>(null);
 
@@ -341,7 +343,15 @@ export default function LastMileApp() {
 
         {feature && <MapFeatureCard info={feature} byId={byId} onClose={() => setFeature(null)} />}
 
-        <MapKey mode={crashMode} onMode={setCrashMode} layers={layers} onLayers={setLayers} summary={layerSummary} />
+        <MapKey
+          mode={crashMode}
+          onMode={setCrashMode}
+          layers={layers}
+          onLayers={setLayers}
+          summary={layerSummary}
+          skin={skin}
+          onSkin={setSkin}
+        />
 
         <Tabs
           label={t('LastMile sections')}
@@ -416,6 +426,7 @@ export default function LastMileApp() {
 
       <div className="app-map" role="region" aria-label={t('Map of subway stations and recorded crash intersections')}>
         <MapClient
+          skin={skin}
           stations={stationsFc}
           route={routeFc}
           walk={walkFc}

@@ -3,6 +3,7 @@
 import { useId, type ReactNode } from 'react';
 import type { MapLayerToggles } from '@/lib/ui/api';
 import { DEFAULT_LAYERS, MODEL_BINS, RECORDED_BINS, type CrashMode } from '@/lib/ui/format';
+import { SKINS, type MapSkin } from '@/lib/ui/map-skins';
 import { StateIcon } from './ui';
 import { useT, type T } from '@/lib/i18n';
 
@@ -127,7 +128,11 @@ export default function MapKey({
   layers,
   onLayers,
   summary,
+  skin,
+  onSkin,
 }: {
+  skin?: MapSkin;
+  onSkin?: (s: MapSkin) => void;
   mode: CrashMode;
   onMode: (m: CrashMode) => void;
   layers?: MapLayerToggles;
@@ -136,13 +141,34 @@ export default function MapKey({
   summary?: Partial<Record<keyof MapLayerToggles, string>>;
 }) {
   const name = useId();
+  const skinName = useId();
   const t = useT();
   // The model hides its lowest bin on the map (see crashFilter), so the key does too.
   const bins = mode === 'model' ? MODEL_BINS.slice(1) : RECORDED_BINS;
   return (
     <details className="rounded-md border border-slate-300 bg-white p-2 text-sm text-slate-900">
-      <summary className="flex min-h-11 cursor-pointer items-center font-semibold">{t('Map key and layers')}</summary>
+      <summary className="flex min-h-11 cursor-pointer items-center font-semibold">{t('Map style, key and layers')}</summary>
       <div className="space-y-3 pt-2">
+        {skin && onSkin && (
+          <fieldset>
+            <legend className="font-semibold">{t('Map style')}</legend>
+            <div className="flex flex-wrap gap-x-4">
+              {SKINS.map((k) => (
+                <label key={k.id} className="flex min-h-11 items-center gap-2">
+                  <input
+                    type="radio"
+                    name={skinName}
+                    value={k.id}
+                    checked={skin === k.id}
+                    onChange={() => onSkin(k.id)}
+                    className="h-5 w-5"
+                  />
+                  {t(k.label)}
+                </label>
+              ))}
+            </div>
+          </fieldset>
+        )}
         {layers && onLayers && (
           <fieldset>
             <legend className="font-semibold">{t('Map layers')}</legend>

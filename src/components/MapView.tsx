@@ -3,20 +3,19 @@
 // All overlays are GeoJSON sources + layers. Everything shown here is also listed as text in the panel.
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { setWorkerUrl } from 'maplibre-gl';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Map, { Layer, NavigationControl, Source, type MapLayerMouseEvent, type MapRef } from 'react-map-gl/maplibre';
 import type { CrashHex, MapFeatureInfo, MapLayerToggles } from '@/lib/ui/api';
 import { crashFilter, hexFromProps, type CrashMode } from '@/lib/ui/format';
 import { addMapIcons, crashIcon, STATION_ICON } from '@/lib/ui/map-icons';
+import { labelLayerId, skinStyles, type MapSkin } from '@/lib/ui/map-skins';
 
-const STYLES = [
-  'https://tiles.openfreemap.org/styles/positron',
-  'https://tiles.openfreemap.org/styles/liberty',
-];
 
 export type FlyTarget = { lng: number; lat: number; zoom?: number; seq: number };
 
 export type MapViewProps = {
+  /** Base map skin (falls back to Light when it fails to load). */
+  skin?: MapSkin;
   stations: GeoJSON.FeatureCollection;
   route: GeoJSON.FeatureCollection;
   /** Walking legs, drawn as a dashed line. */
@@ -104,18 +103,26 @@ export default function MapView(props: MapViewProps) {
   const layers = props.layers ?? NO_LAYERS;
   const { onSelectFeature } = props;
   const mapRef = useRef<MapRef>(null);
-  const [styleIdx, setStyleIdx] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const skin = props.skin ?? 'light';
+  const styles = useMemo(() => skinStyles(skin), [skin]);
+  // Fallback position and load state belong to one skin: switching skins starts both over.
+  const [fallback, setFallback] = useState({ skin, idx: 0 });
+  const styleIdx = fallback.skin === skin ? fallback.idx : 0;
+  const mapKey = `${skin}-${styleIdx}`;
+  const [loadedKey, setLoadedKey] = useState<string | null>(null);
+  const loaded = loadedKey === mapKey;
+  const failed = styleIdx >= styles.length;
+  // Keep the view when the map is re-created for another skin.
+  const [view, setView] = useState({ longitude: -71.08, latitude: 42.35, zoom: 12 });
   const [firstSymbolId, setFirstSymbolId] = useState<string | undefined>(undefined);
 
   const onLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
     if (map) addMapIcons(map);
     const styleLayers = map?.getStyle()?.layers ?? [];
-    setFirstSymbolId(styleLayers.find((l) => l.type === 'symbol')?.id);
-    setLoaded(true);
-  }, []);
+    setFirstSymbolId(labelLayerId(styleLayers));
+    setLoadedKey(mapKey);
+  }, [mapKey]);
 
   const onError = useCallback(
     (e: { error?: Error }) => {
@@ -128,12 +135,9 @@ export default function MapView(props: MapViewProps) {
       }
       console.warn('Map style error', message);
       // Defer: MapLibre can fire 'error' while react-map-gl renders a <Layer>, and setState during render is not allowed.
-      queueMicrotask(() => {
-        if (styleIdx < STYLES.length - 1) setStyleIdx((i) => i + 1);
-        else setFailed(true);
-      });
+      queueMicrotask(() => setFallback({ skin, idx: styleIdx + 1 }));
     },
-    [loaded, styleIdx],
+    [loaded, skin, styleIdx],
   );
 
   useEffect(() => {
@@ -197,10 +201,14 @@ export default function MapView(props: MapViewProps) {
         </div>
       ) : (
         <Map
-          key={styleIdx}
+          key={mapKey}
           ref={mapRef}
-          mapStyle={STYLES[styleIdx]}
-          initialViewState={{ longitude: -71.08, latitude: 42.35, zoom: 12 }}
+          mapStyle={styles[styleIdx]}
+          initialViewState={view}
+          onMoveEnd={(e) => {
+            const { longitude, latitude, zoom } = e.viewState;
+            setView({ longitude, latitude, zoom });
+          }}
           style={{ width: '100%', height: '100%' }}
           onLoad={onLoad}
           onError={onError}
