@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
 from pathlib import Path
 
 import h3
@@ -38,6 +39,8 @@ HERE = Path(__file__).parent
 DATA_DIR = HERE.parent / "vision-zero"
 DATA = DATA_DIR / "data.csv"
 OUT_GEOJSON = HERE / "risk.geojson"
+# The LastMile Next.js app serves this copy at /data/crash-risk.geojson.
+NEXT_DATA_DIR = HERE.parent / "public" / "data"
 
 H3_RES = 9            # ~0.10 km^2 hexes (finer). res 8 coarser, res 10 finer.
 TRAIN_END = "2024-12-31"   # train on <= this date, test on what comes after
@@ -324,8 +327,16 @@ def train(panel: pd.DataFrame):
     te_eval["pred"] = pred_te
     ranked = te_eval.groupby("hex").agg(pred=("pred", "mean"),
                                         actual=("crashes", "sum"))
-    top_decile = ranked.nlargest(max(1, len(ranked) // 10), "pred")
+    n_top = max(1, len(ranked) // 10)
+    top_decile = ranked.nlargest(n_top, "pred")
     capture = top_decile["actual"].sum() / ranked["actual"].sum()
+
+    # Naive baseline for the same ranking question: rank hexes by their plain
+    # training-period crash total (no model), same top-10% cut.
+    train_total = tr.groupby("hex")["crashes"].sum()
+    ranked["train_total"] = ranked.index.map(train_total).fillna(0)
+    base_top = ranked.nlargest(n_top, "train_total")
+    capture_base = base_top["actual"].sum() / ranked["actual"].sum()
 
     print("\n=== Held-out future evaluation (test = after "
           f"{TRAIN_END}) ===")
@@ -337,6 +348,10 @@ def train(panel: pd.DataFrame):
     print(f"improvement over baseline: {improvement:.1f}%")
     print(f"top-10% riskiest hexes captured {capture*100:.1f}% of "
           "actual future crashes")
+    print(f"top-10% by past crash count (naive baseline) captured "
+          f"{capture_base*100:.1f}% "
+          f"({'model beats' if capture > capture_base else 'model does NOT beat'}"
+          " plain counting)")
 
     # Feature importance via permutation-free proxy: refit on all data.
     full_model = HistGradientBoostingRegressor(
@@ -430,6 +445,10 @@ def export_geojson(scored: pd.DataFrame):
     fc = {"type": "FeatureCollection", "features": feats}
     OUT_GEOJSON.write_text(json.dumps(fc))
     print(f"wrote {OUT_GEOJSON.name} ({len(feats)} hexagons)")
+    # Keep the LastMile Next.js app in sync: it reads public/data/crash-risk.geojson.
+    if NEXT_DATA_DIR.is_dir():
+        shutil.copyfile(OUT_GEOJSON, NEXT_DATA_DIR / "crash-risk.geojson")
+        print(f"copied to {NEXT_DATA_DIR / 'crash-risk.geojson'}")
 
 
 # ----------------------------------------------------------------------------

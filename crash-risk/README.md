@@ -3,6 +3,14 @@
 A predictive crash-risk model and web app built on the Boston Vision Zero crash
 dataset (in `../vision-zero/data.csv`).
 
+> **Moved:** this app now lives in `crash-risk/` inside the LastMile repo.
+> The LastMile Next.js app does not run this Python code; it reads a copy of
+> the output at `public/data/crash-risk.geojson` (served at
+> `/data/crash-risk.geojson` and through `GET /api/crash/locations`).
+> `predict.py` refreshes that copy automatically whenever `../public/data/`
+> exists, so rerunning it updates the Next.js app too. In LastMile the layer is
+> shown as **recorded crash history**, not as a prediction.
+
 ## What it does
 
 Predicts crash **risk** (expected crashes) per location for the month ahead,
@@ -35,16 +43,23 @@ on/off while the basemap stays visible.
 - `app.py` — Flask backend serving the app and a JSON API.
 - `index.html` — single-page MapLibre + OpenFreeMap UI with a ranked, searchable
   location list and a hexagon-overlay toggle.
-- `risk.geojson` — generated risk layer with location names + stats.
+- `risk.geojson` — generated risk layer with location names + stats
+  (copied to `../public/data/crash-risk.geojson` for the Next.js app).
+- `requirements.txt` — Python dependencies.
 - `geocache.json` — cached OSM Nominatim reverse-geocoding results.
 
 ## Run
 
 ```bash
-python3 -m pip install h3 flask        # pandas/numpy/scikit-learn also required
-python3 predict.py                     # build risk.geojson (first time only)
-python3 app.py                         # serve at http://localhost:8777
+cd crash-risk
+python3 -m pip install -r requirements.txt   # flask, pandas, numpy, scikit-learn, h3 (v4)
+python3 predict.py                           # build risk.geojson (+ copy to ../public/data/)
+python3 app.py                               # serve at http://localhost:8777
 ```
+
+`predict.py` also prints the top-10% capture of a naive baseline (hexes ranked
+by their plain training-period crash count) next to the model's capture, so you
+can see whether the model beats simple counting.
 
 `app.py` auto-runs `predict.py` if `risk.geojson` is missing. The first
 `predict.py` run reverse-geocodes ~1,000 hexes via Nominatim (~18 min, 1 req/sec)
