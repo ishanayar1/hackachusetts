@@ -5,6 +5,7 @@ import { nextCookies } from 'better-auth/next-js';
 import { Pool } from 'pg';
 import { z } from 'zod';
 import { STOP_ID_RE } from '../mbta/live'; // relative: the auth CLI does not resolve @/ paths
+import { ProfileSchema } from '../profile';
 
 const env = process.env;
 
@@ -27,6 +28,12 @@ export const auth = betterAuth({
         required: false,
         defaultValue: [],
         validator: { input: z.array(z.string().regex(STOP_ID_RE)).max(200) },
+      },
+      // Onboarding answers (src/lib/profile.ts). Null until the user finishes /welcome.
+      profile: {
+        type: 'json',
+        required: false,
+        validator: { input: ProfileSchema },
       },
     },
   },
