@@ -1,0 +1,19 @@
+# Secrets: never commit keys. The rules require a public repo.
+.env
+.env.*
+!.env.example
+
+# Build output and dependencies
+node_modules/
+.next/
+out/
+dist/
+coverage/
+
+# Raw downloads (GTFS zip, crash CSV, ramp GeoJSON). Commit only data/generated/.
+data/raw/
+
+.DS_Store
+
+# IMPORTANT: do NOT ignore /.kiro. The hackathon rules disqualify submissions
+# whose repo does not contain the .kiro folder.
