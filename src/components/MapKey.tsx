@@ -22,6 +22,9 @@ export default function MapKey({ mode, onMode }: { mode: CrashMode; onMode: (m: 
             <StateIcon state="yes" /> Filled green dot: step-free now
           </li>
           <li className="flex items-center gap-2">
+            <StateIcon state="partial" /> Green dot in an amber ring with !: partly step-free (one platform blocked)
+          </li>
+          <li className="flex items-center gap-2">
             <StateIcon state="no" /> Red ring with ×: not step-free right now
           </li>
           <li className="flex items-center gap-2">
@@ -33,6 +36,12 @@ export default function MapKey({ mode, onMode }: { mode: CrashMode; onMode: (m: 
               <path d="M2 10h16" stroke="#DA291C" strokeWidth="3.5" />
             </svg>
             Thick outlined line: your planned route
+          </li>
+          <li className="flex items-center gap-2">
+            <svg width="18" height="18" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M1 10h18" stroke="#111827" strokeWidth="3" strokeDasharray="4 3" />
+            </svg>
+            Dashed line: your walk to the station
           </li>
         </ul>
         <fieldset>

@@ -18,6 +18,8 @@ export type FlyTarget = { lng: number; lat: number; zoom?: number; seq: number }
 export type MapViewProps = {
   stations: GeoJSON.FeatureCollection;
   route: GeoJSON.FeatureCollection;
+  /** Walking legs, drawn as a dashed line. */
+  walk?: GeoJSON.FeatureCollection;
   crashMode: CrashMode;
   selectedStationId: string | null;
   selectedHex: string | null;
@@ -32,14 +34,16 @@ function stepColor(prop: unknown, bins: { min: number; color: string }[]) {
   return expr;
 }
 
-const STATION_LAYERS = ['stations-yes', 'stations-no', 'stations-unknown'];
+const EMPTY_FC: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
+
+const STATION_LAYERS = ['stations-yes', 'stations-partial', 'stations-no', 'stations-unknown'];
 
 // MapLibre 6 looks for its worker next to its own bundle file, which the bundler renames.
 // Point it at the worker emitted as a static asset instead.
 setWorkerUrl(new URL('maplibre-gl/dist/maplibre-gl-worker.mjs', import.meta.url).href);
 
 export default function MapView(props: MapViewProps) {
-  const { stations, route, crashMode, selectedStationId, selectedHex, flyTo, onSelectStation, onSelectHex } = props;
+  const { stations, route, walk, crashMode, selectedStationId, selectedHex, flyTo, onSelectStation, onSelectHex } = props;
   const mapRef = useRef<MapRef>(null);
   const [styleIdx, setStyleIdx] = useState(0);
   const [loaded, setLoaded] = useState(false);
@@ -168,6 +172,20 @@ export default function MapView(props: MapViewProps) {
                   paint={{ 'line-color': ['get', 'color'], 'line-width': 6 }}
                 />
               </Source>
+              <Source id="walk" type="geojson" data={walk ?? EMPTY_FC}>
+                <Layer
+                  id="walk-casing"
+                  type="line"
+                  layout={{ 'line-cap': 'round', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#ffffff', 'line-width': 8 }}
+                />
+                <Layer
+                  id="walk-line"
+                  type="line"
+                  layout={{ 'line-cap': 'butt', 'line-join': 'round' }}
+                  paint={{ 'line-color': '#111827', 'line-width': 4, 'line-dasharray': [2, 1.5] }}
+                />
+              </Source>
               <Source id="stations" type="geojson" data={stations}>
                 {/* Shape + stroke differ by state, not just color (legend in MapKey). */}
                 <Layer
@@ -215,6 +233,30 @@ export default function MapView(props: MapViewProps) {
                     'circle-stroke-color': '#ffffff',
                     'circle-stroke-width': 2,
                   }}
+                />
+                <Layer
+                  id="stations-partial"
+                  type="circle"
+                  filter={['==', ['get', 'state'], 'partial']}
+                  paint={{
+                    'circle-radius': 7,
+                    'circle-color': '#047857',
+                    'circle-stroke-color': '#b45309',
+                    'circle-stroke-width': 3,
+                  }}
+                />
+                <Layer
+                  id="stations-partial-mark"
+                  type="symbol"
+                  filter={['==', ['get', 'state'], 'partial']}
+                  layout={{
+                    'text-field': '!',
+                    'text-font': ['Noto Sans Bold'],
+                    'text-size': 12,
+                    'text-allow-overlap': true,
+                    'text-ignore-placement': true,
+                  }}
+                  paint={{ 'text-color': '#ffffff' }}
                 />
                 <Layer
                   id="stations-selected"

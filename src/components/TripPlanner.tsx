@@ -1,13 +1,30 @@
 'use client';
-// "Plan a trip": step-free route between two stations, plus the "break an elevator" demo control.
+// "Plan a trip": step-free route between two stations (optionally starting with a walk from a location),
+// plus the "break an elevator" demo control.
 import { useEffect, useId, useState } from 'react';
-import type { Leg, RouteFailReason, RouteOk } from '@/lib/router';
+import type { DataSource } from '@/lib/mbta/types';
+import type { Leg, RideLeg, RouteFailReason, RouteOk } from '@/lib/router';
 import type { Station, StationStatusRow } from '@/lib/ui/api';
-import { cleanEntranceId, facilityTypeWord, routeName, stepFreeState } from '@/lib/ui/format';
-import { useFacilities, usePathways, usePlatformNames, useRoute, type RouteQuery } from '@/lib/ui/hooks';
+import { cleanEntranceId, facilityTypeWord, legRoutesText, stepFreeState } from '@/lib/ui/format';
+import { useFacilities, usePlatformNames, useRoute, useWalk, type RouteQuery } from '@/lib/ui/hooks';
+import {
+  DEMO_PLACE,
+  formatDistance,
+  getMyLocation,
+  nearestStepFree,
+  WALK_SOURCE_LABEL,
+  warningLines,
+  type Place,
+  type WalkResult,
+} from '@/lib/ui/walk';
 import { btn, btnPrimary, Notice, SourceBadge } from './ui';
 
-const MARK = { yes: '✓ step-free now', no: '✕ not step-free now', unknown: '? no data' } as const;
+const MARK = {
+  yes: '✓ step-free now',
+  partial: '! partly step-free now',
+  no: '✕ not step-free now',
+  unknown: '? no data',
+} as const;
 
 const FAIL_TEXT: Record<RouteFailReason, (o: string, d: string) => string> = {
   'origin-not-step-free': (o) => `There is no step-free way into ${o} right now.`,
@@ -16,35 +33,114 @@ const FAIL_TEXT: Record<RouteFailReason, (o: string, d: string) => string> = {
   'unknown-station': () => 'We do not know one of these stations. Pick both from the lists.',
 };
 
+/** Optional fields newer /api/route responses carry. Absent on older ones. */
+type Door = { id: string; name: string; lat: number; lon: number };
+type RouteOkPlus = RouteOk & {
+  closedFacilityIds: string[];
+  originEntranceName?: string;
+  destinationExitName?: string;
+  originEntrance?: Door;
+  destinationExit?: Door;
+};
+type RideLegPlus = RideLeg & { towards?: string; alsoRoutes?: string[] };
+
+const hasCoords = (d: Door | undefined): d is Door => !!d && Number.isFinite(d.lat) && Number.isFinite(d.lon);
+type StartMode = 'station' | 'here' | 'demo';
+
+const START_CHOICES: [StartMode, string][] = [
+  ['station', 'A station'],
+  ['here', 'My location'],
+  ['demo', "Pretend I'm at Park Street (demo)"],
+];
+
 type Props = {
   stations: Station[];
   byId: Map<string, Station>;
   live: Map<string, StationStatusRow>;
   onRoute: (legs: Leg[] | null) => void;
+  /** Walking lines ([lon, lat] lists) to draw dashed on the map, or null. */
+  onWalk?: (lines: [number, number][][] | null) => void;
   onSelectStation: (id: string) => void;
 };
 
-export default function TripPlanner({ stations, byId, live, onRoute, onSelectStation }: Props) {
+export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onSelectStation }: Props) {
   const ids = useId();
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
   const [query, setQuery] = useState<RouteQuery | null>(null);
   const [formError, setFormError] = useState('');
+  const [startMode, setStartMode] = useState<StartMode>('station');
+  const [place, setPlace] = useState<Place | null>(null);
+  const [locating, setLocating] = useState(false);
+  const [locError, setLocError] = useState('');
+  /** Start place frozen when the trip was planned, so changing the radio does not change a shown trip. */
+  const [walkPlace, setWalkPlace] = useState<Place | null>(null);
   const { data, error, isLoading, isValidating } = useRoute(query);
   const route = data?.data;
-  const ok = route?.ok ? (route as RouteOk & { closedFacilityIds: string[] }) : null;
+  const ok = route?.ok ? (route as RouteOkPlus) : null;
+
+  const boardStation = query && walkPlace ? byId.get(query.from) : undefined;
+  // Walk to the step-free entrance the route chose; wait for the route so the walk does not go to the
+  // station centre first. Falls back to the station centre when there is no entrance position.
+  const routeSettled = !isValidating && (!!data || !!error);
+  const entrance = hasCoords(ok?.originEntrance) ? ok?.originEntrance : undefined;
+  const walkTo =
+    boardStation && routeSettled
+      ? entrance
+        ? { lat: entrance.lat, lon: entrance.lon }
+        : { lat: boardStation.lat, lon: boardStation.lon }
+      : null;
+  const walk = useWalk(walkPlace, walkTo);
+  const walkData = boardStation ? walk.data?.data : undefined;
 
   useEffect(() => {
     onRoute(ok ? ok.legs : null);
   }, [ok, onRoute]);
 
+  useEffect(() => {
+    onWalk?.(walkData?.coordinates?.length ? [walkData.coordinates] : null);
+  }, [walkData, onWalk]);
+
   const nameOf = (id: string) => byId.get(id)?.name ?? id;
+
+  const setStartPlace = (p: Place) => {
+    setPlace(p);
+    const near = nearestStepFree(p, stations, live);
+    if (near) setFrom(near.id);
+  };
+
+  const locate = async () => {
+    setLocating(true);
+    setLocError('');
+    try {
+      setStartPlace(await getMyLocation());
+    } catch (e) {
+      setPlace(null);
+      setLocError(e instanceof Error ? e.message : 'We could not get your location.');
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  const chooseStart = (m: StartMode) => {
+    setStartMode(m);
+    setLocError('');
+    if (m === 'station') setPlace(null);
+    else if (m === 'demo') setStartPlace(DEMO_PLACE);
+    else {
+      setPlace(null);
+      void locate();
+    }
+  };
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (startMode !== 'station' && !place)
+      return setFormError('Your start location is not set yet. Try your location again or pick another start.');
     if (!from || !to) return setFormError('Choose both a start and a destination station.');
     if (from === to) return setFormError('Start and destination are the same station.');
     setFormError('');
+    setWalkPlace(startMode === 'station' ? null : place);
     setQuery({ from, to, closed: [] });
   };
 
@@ -60,9 +156,44 @@ export default function TripPlanner({ stations, byId, live, onRoute, onSelectSta
         Plan a step-free trip
       </h2>
       <form onSubmit={submit} className="mt-2 space-y-3">
+        <fieldset>
+          <legend className="text-sm font-semibold text-slate-900">Start from</legend>
+          <div className="mt-1">
+            {START_CHOICES.map(([m, label]) => (
+              <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
+                <input
+                  type="radio"
+                  name={`${ids}-start`}
+                  value={m}
+                  checked={startMode === m}
+                  onChange={() => chooseStart(m)}
+                  className="h-5 w-5"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+          <div aria-live="polite" className="text-sm text-slate-800">
+            {startMode === 'here' && locating && <p>Finding your location…</p>}
+            {startMode !== 'station' && place && !locating && (
+              <p>
+                Starting at {place.label}. Your location stays on this device and is only used to plan the walk. We
+                picked the closest step-free station; you can change it below.
+              </p>
+            )}
+          </div>
+          {locError && (
+            <div className="mt-1 space-y-1">
+              <Notice tone="error">{locError}</Notice>
+              <button type="button" className={btn} onClick={() => void locate()}>
+                Try my location again
+              </button>
+            </div>
+          )}
+        </fieldset>
         <div>
           <label htmlFor={`${ids}-from`} className="block text-sm font-semibold text-slate-900">
-            From station
+            {startMode === 'station' ? 'From station' : 'Walk to station (where you board)'}
           </label>
           <select
             id={`${ids}-from`}
@@ -98,6 +229,19 @@ export default function TripPlanner({ stations, byId, live, onRoute, onSelectSta
         {query && (isLoading || isValidating) && <p className="text-sm text-slate-800">Planning your trip…</p>}
         {query && error && <Notice tone="error">Route planning is not available right now. Try again in a minute.</Notice>}
       </div>
+
+      {query && walkPlace && boardStation && (
+        <WalkDetails
+          place={walkPlace}
+          station={boardStation}
+          entranceName={entrance ? entrance.name || ok?.originEntranceName || 'Step-free' : undefined}
+          walk={walkData}
+          loading={walk.isLoading || (!routeSettled && !walkData)}
+          failed={!!walk.error && !walkData}
+          source={walk.data?.source}
+          fetchedAt={walk.data?.fetchedAt}
+        />
+      )}
 
       {query && route && !route.ok && (
         <div className="mt-2 space-y-2">
@@ -154,6 +298,107 @@ export default function TripPlanner({ stations, byId, live, onRoute, onSelectSta
   );
 }
 
+function WalkDetails({
+  place,
+  station,
+  entranceName,
+  walk,
+  loading,
+  failed,
+  source,
+  fetchedAt,
+}: {
+  place: Place;
+  station: Station;
+  entranceName?: string;
+  walk: WalkResult | undefined;
+  loading: boolean;
+  failed: boolean;
+  source?: DataSource;
+  fetchedAt?: string;
+}) {
+  // Only name an entrance when the walk really ends at it; otherwise it ends at the station centre.
+  const target = entranceName
+    ? `${/entrance/i.test(entranceName) ? entranceName : `${entranceName} entrance`} at ${station.name}`
+    : station.name;
+  const warnings = warningLines(walk?.warnings);
+  return (
+    <section aria-labelledby="walk-h" className="mt-3 rounded-md border border-slate-500 bg-white p-3 text-slate-900">
+      <h3 id="walk-h" className="font-bold">
+        Walk to the station
+      </h3>
+      <div aria-live="polite">
+        {loading && !walk && <p className="text-sm">Finding a walking route…</p>}
+        {failed && (
+          <Notice tone="error">
+            Walking directions are not available right now. Head to {station.name} and look for the accessible entrance.
+          </Notice>
+        )}
+      </div>
+      {walk && (
+        <>
+          <p className="mt-1">
+            From {place.label} to {target}: <strong>about {Math.max(1, Math.round(walk.minutes))} min</strong> (
+            {formatDistance(walk.distanceM)}).
+          </p>
+          {!entranceName && (
+            <p className="text-sm text-slate-800">
+              The walk ends at the middle of the station; look for its step-free entrance there.
+            </p>
+          )}
+          <p className="text-sm text-slate-800">
+            <span aria-hidden="true">{walk.source === 'valhalla' ? '♿ ' : '⚠ '}</span>
+            {WALK_SOURCE_LABEL[walk.source] ?? walk.source}
+            {walk.approximate && walk.source === 'valhalla' ? ', approximate' : ''}. Shown as a dashed line on the map.
+          </p>
+          {walk.source === 'straight' && (
+            <p className="text-sm text-slate-800">
+              This is a straight line, not a street route. Check curbs and crossings on the way.
+            </p>
+          )}
+          <SourceBadge source={source} fetchedAt={fetchedAt} />
+          {walk.steps.length > 0 && (
+            <>
+              <h4 className="mt-2 text-sm font-semibold">Turn by turn</h4>
+              <ol className="mt-1 list-decimal space-y-1 pl-5 text-sm">
+                {walk.steps.map((st, i) => (
+                  <li key={i}>
+                    {st.instruction}
+                    {st.distanceM > 0 && <span className="text-slate-700"> ({formatDistance(st.distanceM)})</span>}
+                  </li>
+                ))}
+              </ol>
+            </>
+          )}
+          {walk.warnings && (
+            <>
+              <h4 className="mt-2 text-sm font-semibold">Along this walk</h4>
+              {warnings.length === 0 ? (
+                <p className="text-sm text-slate-800">
+                  No recorded crash areas, reported hazards or poor curb ramps near this route in our data. The data
+                  can be incomplete.
+                </p>
+              ) : (
+                <ul className="mt-1 space-y-1 text-sm">
+                  {warnings.map((w, i) => (
+                    <li key={i} className="flex items-start gap-1.5">
+                      <span aria-hidden="true">⚠</span>
+                      <span>{w}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-1 text-xs text-slate-700">
+                Crash counts are historical recorded crashes (911 dispatches), not live.
+              </p>
+            </>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function RouteDetails({
   route,
   query,
@@ -164,27 +409,28 @@ function RouteDetails({
   onReset,
   onSelectStation,
 }: {
-  route: RouteOk & { closedFacilityIds: string[] };
+  route: RouteOkPlus;
   query: RouteQuery;
   nameOf: (id: string) => string;
-  source?: import('@/lib/mbta/types').DataSource;
+  source?: DataSource;
   fetchedAt?: string;
   onBreak: (id: string) => void;
   onReset: () => void;
   onSelectStation: (id: string) => void;
 }) {
-  const platforms = usePlatformNames();
+  const needPlatforms = route.legs.some((l) => l.kind === 'ride' && !(l as RideLegPlus).towards);
+  const platforms = usePlatformNames(needPlatforms);
   const { byId: facilities } = useFacilities();
-  const pathways = usePathways(!!(route.originEntranceId || route.destinationExitId));
 
-  const doorName = (stationId: string, id: string | null, kind: 'entrance' | 'exit') => {
+  const doorName = (id: string | null, name: string | undefined, kind: 'entrance' | 'exit') => {
+    if (name) return new RegExp(kind, 'i').test(name) ? name : `${name} ${kind}`;
     if (!id) return `Use the station's accessible ${kind} (no detailed data for this station)`;
-    const n = pathways?.[stationId]?.nodes[id]?.name;
-    return n ? `${n} ${kind}` : cleanEntranceId(id, kind);
+    return cleanEntranceId(id, kind);
   };
 
-  const toward = (pid: string) => {
-    const n = platforms?.[pid]?.name ?? '';
+  const toward = (leg: RideLegPlus) => {
+    if (leg.towards) return leg.towards;
+    const n = platforms?.[leg.fromPlatform]?.name ?? '';
     return n && !/line|only/i.test(n) ? n : '';
   };
 
@@ -194,9 +440,9 @@ function RouteDetails({
         ? `Change trains at ${nameOf(leg.stationId)} (same platform).`
         : `Change at ${nameOf(leg.stationId)}: step-free path between platforms, about ${Math.round(leg.minutes)} min.`;
     }
-    const t = toward(leg.fromPlatform);
+    const t = toward(leg);
     const stops = Math.max(1, leg.stationIds.length - 1);
-    return `Take the ${routeName(leg.route)}${t ? ` toward ${t}` : ''} from ${nameOf(leg.fromStation)} to ${nameOf(
+    return `Take ${legRoutesText(leg.route, (leg as RideLegPlus).alsoRoutes)}${t ? ` toward ${t}` : ''} from ${nameOf(leg.fromStation)} to ${nameOf(
       leg.toStation,
     )} (${stops} ${stops === 1 ? 'stop' : 'stops'}, about ${Math.round(leg.minutes)} min).`;
   };
@@ -207,7 +453,8 @@ function RouteDetails({
     <div className="mt-3 space-y-3">
       <div className="rounded-md border border-emerald-800 bg-emerald-50 p-3 text-slate-900">
         <p className="font-bold">
-          <span aria-hidden="true">✓ </span>Step-free route found: about {Math.round(route.minutes)} minutes
+          <span aria-hidden="true">✓ </span>Step-free route found: about {Math.round(route.minutes)} minutes on the
+          train
         </p>
         <p className="text-sm">
           {route.transfers === 0 ? 'No changes.' : `${route.transfers} ${route.transfers === 1 ? 'change' : 'changes'}.`}{' '}
@@ -224,8 +471,12 @@ function RouteDetails({
 
       <ol className="space-y-2 text-sm text-slate-900">
         <li className="rounded border border-slate-300 bg-white p-2">
-          <strong>Enter by:</strong> {doorName(query.from, route.originEntranceId, 'entrance')} at{' '}
-          <button type="button" className="font-semibold text-blue-800 underline" onClick={() => onSelectStation(query.from)}>
+          <strong>Enter by:</strong> {doorName(route.originEntranceId, route.originEntranceName ?? route.originEntrance?.name, 'entrance')} at{' '}
+          <button
+            type="button"
+            className="min-h-11 font-semibold text-blue-800 underline"
+            onClick={() => onSelectStation(query.from)}
+          >
             {nameOf(query.from)}
           </button>
         </li>
@@ -235,8 +486,12 @@ function RouteDetails({
           </li>
         ))}
         <li className="rounded border border-slate-300 bg-white p-2">
-          <strong>Exit by:</strong> {doorName(query.to, route.destinationExitId, 'exit')} at{' '}
-          <button type="button" className="font-semibold text-blue-800 underline" onClick={() => onSelectStation(query.to)}>
+          <strong>Exit by:</strong> {doorName(route.destinationExitId, route.destinationExitName ?? route.destinationExit?.name, 'exit')} at{' '}
+          <button
+            type="button"
+            className="min-h-11 font-semibold text-blue-800 underline"
+            onClick={() => onSelectStation(query.to)}
+          >
             {nameOf(query.to)}
           </button>
         </li>

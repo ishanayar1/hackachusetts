@@ -2,7 +2,7 @@
 // "Crash spots": searchable list of recorded crash areas. Each item flies the map there and shows details.
 import { useDeferredValue, useId, useState } from 'react';
 import type { CrashHex } from '@/lib/ui/api';
-import { crashSpotsFromGeojson } from '@/lib/ui/format';
+import { crashSpotsFromGeojson, crashTitle } from '@/lib/ui/format';
 import { useCrashGeojson, useCrashLocations } from '@/lib/ui/hooks';
 import { Notice } from './ui';
 
@@ -79,7 +79,7 @@ export default function CrashSpots({
                 selectedHex === h.hex ? 'border-blue-800 bg-blue-50' : 'border-slate-300 bg-white hover:bg-slate-50'
               }`}
             >
-              <span className="block font-semibold text-slate-900">{h.label}</span>
+              <span className="block font-semibold text-slate-900">{crashTitle(h)}</span>
               <span className="block text-slate-800">
                 {sort === 'model'
                   ? `Team model: about ${h.estimatePerYear.toFixed(1)} crashes a year · ${h.pedBike} pedestrian & bike recorded`

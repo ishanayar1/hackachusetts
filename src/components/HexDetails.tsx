@@ -1,7 +1,7 @@
 'use client';
 // Text details for the crash area selected on the map or in the list.
 import type { CrashHex } from '@/lib/ui/api';
-import { binLabel, RECORDED_BINS } from '@/lib/ui/format';
+import { binLabel, crashTitle, RECORDED_BINS } from '@/lib/ui/format';
 import { btn } from './ui';
 
 export default function HexDetails({
@@ -18,7 +18,7 @@ export default function HexDetails({
     <section aria-labelledby="hex-h" className="rounded-md border border-slate-400 bg-white p-3">
       <div className="flex items-start justify-between gap-2">
         <h2 id="hex-h" className="text-base font-bold text-slate-900">
-          Crash area: {hex.label}
+          Crash area: {crashTitle(hex)}
         </h2>
         <button type="button" className={btn} onClick={onClose} aria-label="Close crash area details">
           Close
