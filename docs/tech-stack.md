@@ -36,9 +36,9 @@ OpenStreetMap (street info)  →  OpenFreeMap (map pictures)   →  MapLibre (dr
 
 **Backup:** OpenFreeMap is a free community service, so if it fails to load we switch one line to a backup style built on OpenStreetMap's standard image tiles. The map still shows streets, just less polished. Show "© OpenStreetMap contributors" on the map; the license requires it.
 
-## Crash-risk app: the map stack in practice (`app/`)
+## Crash-risk app: the map stack in practice (`crash-risk/`)
 
-The crash-risk prediction app in `app/` is a working reference for the map
+The crash-risk prediction app in `crash-risk/` is a working reference for the map
 stack above. It's a standalone Python + vanilla-JS app (not Next.js), but the
 map pieces are identical, so it's a good proof that this stack works with no
 keys.
