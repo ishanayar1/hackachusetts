@@ -13,7 +13,7 @@ Hackachusetts · Saturday, Oct 24, 2026 · Civic Action track (V3: safer, connec
 - Live public data plus a 20-second demo moment: pick Park Street, see "elevator out", watch the route recalculate.
 - Real Kiro work (judging: implementation): an MBTA MCP server, specs, property-based tests ("never route through a closed elevator"), steering docs and hooks.
 
-**Stack:** TypeScript, Next.js as a PWA, MapLibre map with OpenFreeMap tiles (no key), a server-side cache in front of every MBTA call, built in Kiro.
+**Stack:** TypeScript, React + Next.js (App Router) as an installable mobile web app (PWA), Tailwind and shadcn/ui, MapLibre (via react-map-gl) with OpenFreeMap tiles (no key), Next.js route handlers that cache every MBTA call, hosted on Vercel, built in Kiro. Full details are in the Tech stack tab (`docs/tech-stack.md`).
 
 ### Before 11:30
 - [ ] Get the free **MBTA V3 API key** at api-v3.mbta.com. Without it the whole venue shares 20 requests a minute.
@@ -38,6 +38,7 @@ These were checked against the real APIs on the morning of Oct 24. Earlier versi
 | In-station paths in GTFS | 9,325 (490 elevator rows) |
 | Vision Zero crashes | 44,986 (2015 to Sept 2026) |
 | Boston 311 cases with lat/long | 75,498 (Aug 2025 to yesterday) |
+| MBTA parking lots | 169 (13 at subway stations; 149 list accessible spaces) |
 
 ## Features & data
 
@@ -63,6 +64,7 @@ Every source below was called live. "Free key" means sign up and get it instantl
 | 16 | **Bluebikes as an alternative** | Bluebikes live feed (`gbfs.bluebikes.com`) | ✅ Live `station_status` | Stretch |
 | 17 | **Equity view**: who lost step-free access | MassGIS environmental-justice block groups | ✅ 462 Boston block groups | Stretch |
 | 18 | **Base map** | OpenFreeMap tiles (no key) | ✅ | Must |
+| 19 | **Accessible park & ride**: stations with accessible parking *and* working elevators, e.g. "Wollaston's elevator is out; the nearest station with accessible parking and working elevators is Quincy Center" | MBTA `/facilities?filter[type]=PARKING_AREA` (or GTFS `facilities.txt` + `facilities_properties.txt`) for capacity, `capacity-accessible`, `fee-daily`, `payment-app`, `overnight-allowed`; plus `PARKING_ISSUE` / `PARKING_CLOSURE` alerts and elevator alerts | ✅ 169 lots, 13 at subway stations (Wollaston 531 spaces / 12 accessible, Forest Hills 217 / 7, Orient Heights 411 / 8, Wonderland 476 / 11). `/live_facilities` returned **no live occupancy**, so we never claim "spots free now" | Stretch |
 
 **Scope:** subway only (Red, Orange, Blue, Green B/C/D/E, Mattapan). The Silver Line is filed as a bus route in the API, so it's a stretch goal. Commuter rail and buses are out.
 
@@ -97,14 +99,16 @@ lastmile/
     hooks/      run router tests on save, block commits containing keys
     settings/mcp.json   → MBTA MCP server
   mcp/mbta/            MCP server: alerts, facilities, stops, vehicles
-  scripts/             build-station-graph (GTFS), build-crash-grid, build-311-hazards
-  data/generated/      stations.json, elevators.json, crash-grid.json, hazards.json, demo-alerts.json
-  web/  (Next.js PWA)
-    app/               map · plan trip · alerts · station detail
-    app/api/           alerts, vehicles, predictions (cached, with fallbacks), route, hazards
-    lib/               mbta client (retries and fallbacks), router, route safety score
-  tests/               property-based tests (fast-check)
-  docs/                lastmile-plan.md, mbta-v3-reference.md
+  scripts/             build-gtfs (station graph, elevators, shapes, parking), build-crash-grid, build-311-hazards
+  public/data/         stations.json, graph.json, shapes.json, parking.json, crash-grid.json, hazards.json, demo-alerts.json
+  src/                 (Next.js App Router + React PWA)
+    app/               page.tsx (map + bottom sheet) · station/[id] · api/alerts · api/vehicles · api/predictions · api/walk · manifest.ts
+    components/        Map.tsx ('use client', no SSR) · AlertFeed · TripSheet · StationCard
+    lib/server/        mbta.ts (server-only: cache, retries, fallbacks) · walk.ts (Valhalla → OSRM → straight line)
+    lib/               router.ts (step-free Dijkstra) · safety.ts (crash + hazard checks)
+  tests/               property-based tests (Vitest + fast-check)
+  docs/                lastmile-plan.md, mbta-v3-reference.md, tech-stack.md
+  Dockerfile, docker-compose.yml, .dockerignore   (Next.js standalone image; keys passed at runtime, never baked in)
 ```
 
 ### Phases (hacking starts at 11:30)
@@ -178,3 +182,5 @@ Paste the full brief into your AI agent before it writes code. Use the buttons b
 7. Crash data is historical. Call it "recorded crashes" and show the backtest, never "AI risk."
 8. The router must never use a closed elevator. Write a property-based test for it.
 9. Walking routes come from the public Valhalla server (`valhalla1.openstreetmap.de`, no key; OpenRouteService signups are down). It's a shared service: cache every route on our server, pre-compute demo routes, and fall back to OSRM foot routing, then a straight line.
+10. Next.js App Router only. Secrets stay in route handlers and `src/lib/server/` files marked `import 'server-only'`; never use `NEXT_PUBLIC_` for keys. The map component is `'use client'` and loaded with `next/dynamic` and `ssr: false`.
+11. Parking data has no live occupancy. Show capacity, accessible spaces, fees and parking alerts, never "spots available now."

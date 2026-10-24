@@ -9,7 +9,7 @@ Base URL: `https://api-v3.mbta.com`. Every endpoint is GET only and returns JSON
 ## 1. The 60-second version
 
 **Rules**
-- Every MBTA call goes through our Next.js route handlers (`/api/*`). Browsers never call MBTA directly.
+- Every MBTA call goes through our Next.js route handlers (`src/app/api/*/route.ts`). Browsers never call MBTA directly.
 - Put the API key in the server env var `MBTA_API_KEY` and send it as the `x-api-key` header.
 - Without a key, the limit is 20 requests/min per IP, shared by the whole hackathon wifi. A free key gives 1,000/min **(docs)**.
 - Anything static (stations, elevators, pathways, routes, shapes) comes from GTFS static at build time. The live API is only for alerts, vehicles and predictions.
