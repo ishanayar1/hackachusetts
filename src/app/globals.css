@@ -69,6 +69,16 @@ body {
   width: 44px !important;
   height: 44px !important;
 }
+/* The tapped-spot popup: room for its close button, which is finger-sized too.
+   Scoped under .app-map so these beat MapLibre's own stylesheet, which loads later. */
+.app-map .maplibregl-popup-content {
+  padding: 12px 40px 12px 12px;
+}
+.app-map .maplibregl-popup-close-button {
+  width: 36px;
+  height: 36px;
+  font-size: 22px;
+}
 
 @media (prefers-reduced-motion: reduce) {
   *,
