@@ -276,13 +276,13 @@ function decodePolyline6(str: string): LngLat[] {
   return coords;
 }
 
-async function valhalla(a: Geo, b: Geo, excludePolygons?: number[][][]): Promise<WalkRoute[]> {
+async function valhalla(a: Geo, b: Geo, mode: TravelMode = 'walk', excludePolygons?: number[][][]): Promise<WalkRoute[]> {
   const body: Record<string, unknown> = {
     locations: [
       { lat: a.lat, lon: a.lng },
       { lat: b.lat, lon: b.lng },
     ],
-    costing: 'bicycle',
+    costing: mode === 'bike' ? 'bicycle' : 'pedestrian',
     alternates: 3,
     directions_options: { units: 'kilometers' },
   };
@@ -326,11 +326,11 @@ async function valhalla(a: Geo, b: Geo, excludePolygons?: number[][][]): Promise
 
 type Trip = { status?: number; summary?: { length?: number; time?: number }; legs?: Array<{ shape?: string }> };
 
-async function osrm(a: Geo, b: Geo): Promise<WalkRoute[]> {
+async function osrm(a: Geo, b: Geo, mode: TravelMode = 'walk'): Promise<WalkRoute[]> {
   const coords = `${a.lng.toFixed(5)},${a.lat.toFixed(5)};${b.lng.toFixed(5)},${b.lat.toFixed(5)}`;
-  // The public OSRM demo only hosts the car/bike/foot "driving" profile reliably;
-  // the bike profile is the closest cycling fallback when Valhalla is down.
-  const url = `https://router.project-osrm.org/route/v1/bike/${coords}?overview=full&geometries=geojson&alternatives=true`;
+  // Public OSRM demo hosts foot + bike profiles; pick to match the requested mode.
+  const profile = mode === 'bike' ? 'bike' : 'foot';
+  const url = `https://router.project-osrm.org/route/v1/${profile}/${coords}?overview=full&geometries=geojson&alternatives=true`;
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(15000) });
     if (!res.ok) return [];
@@ -352,7 +352,8 @@ async function osrm(a: Geo, b: Geo): Promise<WalkRoute[]> {
 
 // --------------------------------------------------------------- intent (Gemini)
 type Intent = 'greet' | 'help' | 'broken_now' | 'station_status' | 'step_free' | 'safe_route' | 'unknown';
-type Classified = { intent: Intent; station?: string; from?: string; to?: string };
+type TravelMode = 'bike' | 'walk';
+type Classified = { intent: Intent; station?: string; from?: string; to?: string; mode?: TravelMode };
 
 /**
  * Classify the user's message into one intent and pull out any place names,
@@ -366,10 +367,12 @@ async function geminiClassify(message: string): Promise<Classified | null> {
     'You classify messages for a Boston MBTA step-free transit assistant. The user may make typos. ' +
     'Return STRICT JSON: {"intent": one of ["greet","help","broken_now","station_status","step_free","safe_route","unknown"], ' +
     '"station": "<a single station name if they ask about one station, else empty>", ' +
-    '"from": "<origin for a trip, else empty>", "to": "<destination for a trip, else empty>"}. ' +
+    '"from": "<origin for a trip, else empty>", "to": "<destination for a trip, else empty>", ' +
+    '"mode": "<bike or walk, only for safe_route; default walk>"}. ' +
     'Rules: greet = hi/hello/good morning. help = what can you do. broken_now = asking what elevators/stations are down now. ' +
-    'station_status = asking if ONE station or its elevator is working/accessible. step_free = wants a wheelchair/no-stairs TRIP between two places. ' +
-    'safe_route = wants the safest walk/bike route between two places. Fix obvious typos in station names. ' +
+    'station_status = asking if ONE station or its elevator is working/accessible. step_free = wants a wheelchair/no-stairs TRAIN TRIP between two places. ' +
+    'safe_route = wants the safest WALK or BIKE route between two places; set mode="bike" if they mention bike/cycling/riding, else mode="walk". ' +
+    'Fix obvious typos in station names. ' +
     `Message: ${JSON.stringify(message)}`;
   try {
     geminiSpend();
@@ -445,10 +448,10 @@ async function geminiExplain(facts: object): Promise<string | null> {
   if (!key) return null;
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL?.trim() || 'gemini-flash-latest'}:generateContent?key=${key}`;
   const prompt =
-    'You are a Boston cycling-safety assistant. Using ONLY these facts (JSON), write a short, ' +
-    'friendly answer (3-5 sentences). Recommend the safest BIKE route, give distance/time, say ' +
-    'whether we routed around high-crash zones, name the riskiest point to watch, and mention the ' +
-    'nearest MBTA stops (useful for bringing a bike or bike-share). Do not invent numbers.\nFacts: ' +
+    'You are a Boston mobility-safety assistant for people who walk, roll (wheelchair) or bike. ' +
+    'Using ONLY these facts (JSON), write a short, friendly answer (3-5 sentences). The facts include "mode" ' +
+    '(walk or bike) — recommend the safest route FOR THAT MODE, give distance/time, name the riskiest point to ' +
+    'watch, and mention the nearest MBTA stops. Do not say you "routed around" anything. Do not invent numbers.\nFacts: ' +
     JSON.stringify(facts);
   try {
     const res = await fetch(url, {
@@ -501,8 +504,10 @@ export async function POST(request: Request) {
   // phrasing. We turn the classification into a clean canonical message and let
   // the existing keyword handlers do the actual work. No key -> this is null and
   // we fall straight through to the keyword rules below.
+  let routeMode: TravelMode = 'walk';
   const cls = await geminiClassify(message);
   if (cls) {
+    if (cls.mode) routeMode = cls.mode;
     if (cls.intent === 'greet') return Response.json({ ok: true, greeting: true, reply: GREETING_REPLY });
     if (cls.intent === 'help') return Response.json({ ok: true, help: true, reply: GREETING_REPLY });
     if (cls.intent === 'broken_now') {
@@ -565,9 +570,12 @@ export async function POST(request: Request) {
 
   // Try to route AROUND the worst risk zones; if that boxes in the path, fall
   // back to plain routing (and report avoided=false honestly).
+  // Keyword fallback for mode when the classifier didn't set it.
+  if (/\b(bike|bicycle|cycl|ride|riding)\b/i.test(message)) routeMode = 'bike';
+
   const excl = spots.length ? riskExclusionPolygons([from.lng, from.lat], [to.lng, to.lat], spots) : [];
-  let plain = (await valhalla(from, to)) ;
-  if (!plain.length) plain = await osrm(from, to);
+  let plain = (await valhalla(from, to, routeMode)) ;
+  if (!plain.length) plain = await osrm(from, to, routeMode);
 
   const bestRisk = (routes: WalkRoute[]) =>
     routes.length && spots.length ? Math.min(...routes.map((x) => scorePath(x.coords, spots).riskTotal)) : Infinity;
@@ -583,7 +591,7 @@ export async function POST(request: Request) {
     // that beats the plain route — don't stop at the first routable one.
     const ks = Array.from(new Set([excl.length, Math.ceil(excl.length / 2), 3, 2, 1].filter((k) => k >= 1 && k <= excl.length)));
     for (const k of ks) {
-      const r = await valhalla(from, to, excl.slice(0, k));
+      const r = await valhalla(from, to, routeMode, excl.slice(0, k));
       if (!r.length) continue; // 442 no-path at this k: relax further
       const risk = bestRisk(r);
       if (risk < chosenRisk) {
@@ -610,6 +618,7 @@ export async function POST(request: Request) {
   const [oStop, dStop] = await Promise.all([nearestStop(from), nearestStop(to)]);
 
   const facts = {
+    mode: routeMode,
     from: from.name,
     to: to.name,
     distance_m: Math.round(safest.distanceM),
@@ -639,6 +648,7 @@ function emptyScore(): RiskScore {
 }
 
 function fallbackReply(f: {
+  mode: TravelMode;
   from: string;
   to: string;
   distance_m: number;
@@ -650,14 +660,10 @@ function fallbackReply(f: {
   mbta_destination_stop: string | null;
 }): string {
   const km = (f.distance_m / 1000).toFixed(1);
+  const verb = f.mode === 'bike' ? '🚲 Safest bike ride' : '🚶 Safest walking route';
   const lines = [
-    `🚲 Safest bike ride from ${f.from} to ${f.to}: about ${km} km (~${f.minutes} min), crash-risk score ${f.risk_score} (lower is safer).`,
+    `${verb} from ${f.from} to ${f.to}: about ${km} km (~${f.minutes} min), crash-risk score ${f.risk_score} (lower is safer).`,
   ];
-  lines.push(
-    f.avoided_high_risk_zones
-      ? 'I routed you around the highest-crash zones in the area.'
-      : "I couldn't fully avoid the high-risk zones here, so take extra care.",
-  );
   if (f.riskiest_point) lines.push(`Watch out near ${f.riskiest_point}.`);
   if (f.mbta_origin_stop && f.mbta_destination_stop) {
     lines.push(`By MBTA: nearest stops are ${f.mbta_origin_stop} (start) and ${f.mbta_destination_stop} (end).`);
