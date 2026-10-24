@@ -12,6 +12,9 @@ export interface LatLon {
 export interface WalkStep {
   instruction: string;
   distanceM: number;
+  /** Where the step starts, when the router gives it. */
+  lat?: number;
+  lon?: number;
 }
 
 
@@ -127,7 +130,7 @@ async function getJson(url: string, deps: WalkDeps): Promise<unknown> {
 interface ValhallaResponse {
   trip?: {
     summary?: { time?: number; length?: number };
-    legs?: { shape?: string; maneuvers?: { instruction?: string; length?: number }[] }[];
+    legs?: { shape?: string; maneuvers?: { instruction?: string; length?: number; begin_shape_index?: number }[] }[];
   };
 }
 
@@ -148,7 +151,14 @@ export async function fromValhalla(from: LatLon, to: LatLon, deps: WalkDeps = {}
   if (coordinates.length < 2) throw new Error('valhalla: empty shape');
   const steps = (leg.maneuvers ?? [])
     .filter((m) => typeof m.instruction === 'string' && m.instruction.length > 0)
-    .map((m) => ({ instruction: m.instruction as string, distanceM: Math.round((m.length ?? 0) * 1000) }));
+    .map((m) => {
+      const at = m.begin_shape_index === undefined ? undefined : coordinates[m.begin_shape_index];
+      return {
+        instruction: m.instruction as string,
+        distanceM: Math.round((m.length ?? 0) * 1000),
+        ...(at ? { lat: at[1], lon: at[0] } : {}),
+      };
+    });
   return {
     source: 'valhalla',
     distanceM: Math.round((j.trip.summary.length ?? 0) * 1000),
@@ -162,7 +172,7 @@ export async function fromValhalla(from: LatLon, to: LatLon, deps: WalkDeps = {}
 interface OsrmStep {
   distance?: number;
   name?: string;
-  maneuver?: { type?: string; modifier?: string };
+  maneuver?: { type?: string; modifier?: string; location?: [number, number] };
 }
 interface OsrmResponse {
   code?: string;
@@ -187,7 +197,14 @@ export async function fromOsrm(from: LatLon, to: LatLon, deps: WalkDeps = {}): P
   const coordinates = r?.geometry?.coordinates;
   if (j.code !== 'Ok' || !r || !coordinates || coordinates.length < 2) throw new Error('osrm: no route');
   const distanceM = Math.round(r.distance ?? 0);
-  const steps = (r.legs?.[0]?.steps ?? []).map((s) => ({ instruction: osrmInstruction(s), distanceM: Math.round(s.distance ?? 0) }));
+  const steps = (r.legs?.[0]?.steps ?? []).map((s) => {
+    const at = s.maneuver?.location; // [lon, lat]
+    return {
+      instruction: osrmInstruction(s),
+      distanceM: Math.round(s.distance ?? 0),
+      ...(at ? { lat: at[1], lon: at[0] } : {}),
+    };
+  });
   return {
     source: 'osrm',
     distanceM,
@@ -213,6 +230,8 @@ export function straightLine(from: LatLon, to: LatLon): WalkResult {
       {
         instruction: `Head ${compass(from, to)} toward your destination (straight-line estimate, no sidewalk data)`,
         distanceM,
+        lat: from.lat,
+        lon: from.lon,
       },
     ],
     approximate: true,

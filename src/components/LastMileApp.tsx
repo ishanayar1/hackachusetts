@@ -1,6 +1,7 @@
 'use client';
 // Main screen: panel (tabs + details) and the map. All map content is also available as text in the panel.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import type { Leg } from '@/lib/router';
 import type {
   CrashHex,
@@ -17,6 +18,7 @@ import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeoj
 import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
 import { formatClock, isPartial, routeName } from '@/lib/ui/format';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
+import { formatDistance, haversineM, type Place } from '@/lib/ui/walk';
 import Account from './Account';
 import BrokenNow from './BrokenNow';
 import CrashSpots from './CrashSpots';
@@ -28,8 +30,8 @@ import MyStations from './MyStations';
 import ChatWidget from './ChatWidget';
 import StationDetails from './StationDetails';
 import Tabs from './Tabs';
-import TripPlanner from './TripPlanner';
-import { btn, Notice, SourceBadge, StarButton } from './ui';
+import TripPlanner, { type MapPickUse, type TripPlannerHandle, type TripStep, type TripSteps } from './TripPlanner';
+import { btn, btnPrimary, Notice, SourceBadge, StarButton } from './ui';
 import LanguageSwitcher from './LanguageSwitcher';
 import { useT } from '@/lib/i18n';
 
@@ -156,6 +158,13 @@ export default function LastMileApp() {
   const [bikeRoute, setBikeRoute] = useState<GeoJSON.FeatureCollection | null>(null);
   const [flyTo, setFlyTo] = useState<FlyTarget | null>(null);
   const [walkLines, setWalkLines] = useState<[number, number][][] | null>(null);
+  /** Spot tapped on the map (popup open), and the start / end places of the planned trip. */
+  const [pin, setPin] = useState<Place | null>(null);
+  const [tripPlaces, setTripPlaces] = useState<{ start: Place | null; end: Place | null }>({ start: null, end: null });
+  const planner = useRef<TripPlannerHandle>(null);
+  /** Steps of the shown trip, and the step shown on the map's trip bar (null = not started). */
+  const [trip, setTrip] = useState<TripSteps | null>(null);
+  const [nav, setNav] = useState<{ id: number; idx: number } | null>(null);
   const mine = useMyStations();
   const [banner, setBanner] = useState<string[]>([]);
   const prevStepFree = useRef<Map<string, StepFreeLevel> | null>(null);
@@ -272,6 +281,75 @@ export default function LastMileApp() {
     setSelectedHex(h);
     setFlyTo((f) => ({ lng: h.lng, lat: h.lat, zoom: 14.5, seq: (f?.seq ?? 0) + 1 }));
   }, []);
+
+  // Tap on empty map: a pin named after the closest station, with a popup of directions choices.
+  const pickPlace = useCallback(
+    (p: { lat: number; lon: number } | null) => {
+      if (!p) return setPin(null);
+      let near: Station | undefined;
+      for (const s of stations ?? []) if (!near || haversineM(p, s) < haversineM(p, near)) near = s;
+      // Distance in the name, so two spots near the same station read differently.
+      const label = near
+        ? t('Map spot {dist} from {station}', { dist: formatDistance(haversineM(p, near)), station: near.name })
+        : t('Map spot');
+      setPin({ ...p, label });
+    },
+    [stations, t],
+  );
+  const choosePin = (use: MapPickUse) => {
+    if (!pin) return;
+    // Show the trip tab before the planner takes the spot, so it can move focus to itself.
+    flushSync(() => {
+      setTab('trip');
+      setPin(null);
+    });
+    planner.current?.pick(pin, use);
+  };
+  const onTripPlaces = useCallback((start: Place | null, end: Place | null) => setTripPlaces({ start, end }), []);
+
+  // Step-by-step view: the trip bar on the map shows one step at a time and moves the map to it.
+  const onTrip = useCallback((next: TripSteps | null) => {
+    setTrip(next);
+    setNav((n) => (n && next && n.id === next.id && n.idx < next.steps.length ? n : null));
+  }, []);
+  const showStep = (s: TripStep | undefined) => {
+    if (s?.at) {
+      const at = s.at;
+      setFlyTo((f) => ({ lng: at.lon, lat: at.lat, zoom: 17, seq: (f?.seq ?? 0) + 1 }));
+    }
+  };
+  const goStep = (idx: number) => {
+    if (!trip?.steps[idx]) return;
+    setNav({ id: trip.id, idx });
+    showStep(trip.steps[idx]);
+  };
+  const step = trip && nav ? trip.steps[nav.idx] : undefined;
+  const placesFc = useMemo(
+    () =>
+      pointsGeojson([
+        ...(tripPlaces.start ? [{ ...tripPlaces.start, role: 'start' }] : []),
+        ...(tripPlaces.end ? [{ ...tripPlaces.end, role: 'end' }] : []),
+        ...(pin ? [{ ...pin, role: 'pin' }] : []),
+      ]),
+    [tripPlaces, pin],
+  );
+  const pinPopup = pin && (
+    <div className="text-sm text-slate-900">
+      <p className="font-semibold">{pin.label}</p>
+      {/* Two rows only, so the popup fits in the short phone map. */}
+      <div className="mt-2 grid grid-cols-2 gap-1.5">
+        <button type="button" className={`${btnPrimary} col-span-2`} onClick={() => choosePin('from-me')}>
+          {t('Directions from my location')}
+        </button>
+        <button type="button" className={btn} onClick={() => choosePin('start')}>
+          {t('Start here')}
+        </button>
+        <button type="button" className={btn} onClick={() => choosePin('end')}>
+          {t('End here')}
+        </button>
+      </div>
+    </div>
+  );
 
   const selected = selectedStationId ? byId.get(selectedStationId) : undefined;
   const blockedNow = (status.data?.data.stations ?? []).filter(
@@ -391,11 +469,15 @@ export default function LastMileApp() {
               label: t('Plan a trip'),
               content: (
                 <TripPlanner
+                  ref={planner}
                   stations={sorted}
                   byId={byId}
                   live={live}
                   onRoute={setLegs}
                   onWalk={setWalkLines}
+                  onPlaces={onTripPlaces}
+                  onTrip={onTrip}
+                  onStart={() => goStep(0)}
                   onSelectStation={selectStation}
                 />
               ),
@@ -433,7 +515,51 @@ export default function LastMileApp() {
           ramps={rampsFc}
           equity={equity.data}
           onSelectFeature={setFeature}
+          onPickPlace={pickPlace}
+          pin={pin}
+          pinContent={pinPopup}
+          places={placesFc}
         />
+        {trip && (
+          <section
+            aria-label={t('Trip controls')}
+            className="absolute left-2 right-16 top-2 z-10 rounded-md border border-slate-500 bg-white p-2 text-sm text-slate-900 shadow-lg md:right-auto md:w-96"
+          >
+            {nav && step ? (
+              <>
+                <p className="font-semibold">{t('Step {n} of {total}', { n: nav.idx + 1, total: trip.steps.length })}</p>
+                <p aria-live="polite" className="mt-0.5">
+                  {step.text}
+                </p>
+                <div className="mt-2 grid grid-cols-3 gap-1.5">
+                  <button type="button" className={btn} disabled={nav.idx === 0} onClick={() => goStep(nav.idx - 1)}>
+                    {t('Back')}
+                  </button>
+                  <button
+                    type="button"
+                    className={btnPrimary}
+                    disabled={nav.idx >= trip.steps.length - 1}
+                    onClick={() => goStep(nav.idx + 1)}
+                  >
+                    {t('Next')}
+                  </button>
+                  <button type="button" className={btn} onClick={() => setNav(null)}>
+                    {t('Stop')}
+                  </button>
+                </div>
+              </>
+            ) : (
+              <div className="grid grid-cols-2 gap-1.5">
+                <button type="button" className={btnPrimary} disabled={trip.steps.length === 0} onClick={() => goStep(0)}>
+                  <span aria-hidden="true">▶</span> {t('Start')}
+                </button>
+                <button type="button" className={btn} onClick={() => planner.current?.clear()}>
+                  <span aria-hidden="true">✕</span> {t('Close trip')}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
       </div>
 
       <ChatWidget
