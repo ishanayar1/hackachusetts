@@ -113,7 +113,7 @@ def _load_geocache() -> dict:
     return {}
 
 
-DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 def neighborhood_for(lat: float, lng: float, cache: dict) -> str:
