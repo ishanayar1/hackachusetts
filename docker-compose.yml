@@ -1,0 +1,13 @@
+services:
+  web:
+    build: .
+    image: lastmile:latest
+    ports:
+      - "3000:3000"
+    # Runtime-only secrets: MBTA_API_KEY (or mbta). Never baked into the image.
+    env_file:
+      - path: .env
+        required: false
+      - path: .env.local
+        required: false
+    restart: unless-stopped
