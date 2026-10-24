@@ -130,6 +130,43 @@ describe.skipIf(!built)('static GTFS data', () => {
     }
   });
 
+  it('every entrance node carries coordinates near its station', () => {
+    const byId = new Map(stations.map((s) => [s.id, s]));
+    for (const [sid, sp] of Object.entries(pathways)) {
+      const st = byId.get(sid)!;
+      for (const [id, n] of Object.entries(sp.nodes)) {
+        if (n.kind !== 'entrance') continue;
+        expect(typeof n.lat, `${sid} ${id}`).toBe('number');
+        expect(typeof n.lon, `${sid} ${id}`).toBe('number');
+        expect(Math.abs(n.lat! - st.lat) + Math.abs(n.lon! - st.lon), `${sid} ${id}`).toBeLessThan(0.01);
+      }
+    }
+    expect(pathways['place-jfk'].nodes['door-jfk-columbia']).toMatchObject({ lat: expect.any(Number), lon: expect.any(Number) });
+  });
+
+  it('mini-high platforms and mobile lifts map to the platforms they serve', () => {
+    const boarding = facilities.filter((f) => f.type === 'ELEVATED_SUBPLATFORM' || f.type === 'PORTABLE_BOARDING_LIFT');
+    expect(boarding.filter((f) => f.type === 'ELEVATED_SUBPLATFORM').length).toBeGreaterThanOrEqual(20);
+    for (const f of boarding) {
+      expect(f.platformIds?.length, f.id).toBeGreaterThan(0);
+      for (const p of f.platformIds!) {
+        expect(network.platforms[p]?.stationId, `${f.id} ${p}`).toBe(f.stationId);
+        expect(f.excludesStops ?? [], `${f.id} ${p}`).not.toContain(p);
+      }
+      expect(stations.find((s) => s.id === f.stationId)!.facilityIds).toContain(f.id);
+    }
+    expect(facilities.find((f) => f.id === 'subplat-cenav-1')?.platformIds).toEqual(['70270']);
+    expect(facilities.find((f) => f.id === 'subplat-cenav-0')?.platformIds).toEqual(['70269']);
+    expect(facilityIds.has('subplat-bbsta-5')).toBe(false); // Commuter Rail only
+  });
+
+  it('ride times are weekday medians: Andrew -> JFK/UMass is 3 min on both branch platforms', () => {
+    const andrewJfk = network.rides.filter((r) => r.from === '70083' && (r.to === '70085' || r.to === '70095'));
+    expect(andrewJfk.map((r) => r.minutes)).toEqual([3, 3]);
+    const dtxPark = network.rides.find((r) => r.from === '70078' && r.to === '70076');
+    expect(dtxPark?.minutes).toBe(2);
+  });
+
   it('parking lots and line shapes are well formed', () => {
     expect(parking.length).toBeGreaterThan(0);
     for (const p of parking) expect(stationIds.has(p.stationId), p.id).toBe(true);

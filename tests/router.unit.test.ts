@@ -9,6 +9,8 @@ import {
   streetAccess,
   streetAccessInfo,
   nearestStepFree,
+  haversineKm,
+  towardsOf,
   type StaticData,
   type RideLeg,
 } from '@/lib/router';
@@ -250,6 +252,186 @@ describe('planStepFree', () => {
   });
 });
 
+describe('towards and entrance names', () => {
+  it('ride legs name the terminal in the direction of travel', () => {
+    const r = planStepFree(build(LINES), { from: 'O', to: 'D' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect((r.legs[0] as RideLeg).towards).toBe('X'); // Red direction 0 runs O -> X
+    expect((r.legs[2] as RideLeg).towards).toBe('D'); // Orange ends at D
+    const back = planStepFree(build(LINES), { from: 'X', to: 'O' });
+    if (back.ok) expect((back.legs[0] as RideLeg).towards).toBe('O');
+  });
+
+  it('a branching line joins both terminals, and a branch station names only its own', () => {
+    const st = (id: string, name: string): Station => ({
+      id, name, lat: 42.35, lon: -71.06, wheelchair: 1, routes: ['Red'], platformIds: [`${id}-0`], entranceIds: [], facilityIds: [],
+    });
+    const data: StaticData = {
+      stations: [st('A', 'Alewife'), st('J', 'JFK'), st('S', 'Ashmont'), st('Q', 'Quincy'), st('B', 'Braintree')],
+      network: {
+        platforms: Object.fromEntries(['A', 'J', 'S', 'Q', 'B'].map((id) => [`${id}-0`, { id: `${id}-0`, stationId: id, name: id, routes: ['Red'] as RouteId[] }])),
+        rides: [
+          { from: 'A-0', to: 'J-0', route: 'Red', directionId: 0, minutes: 2 },
+          { from: 'J-0', to: 'S-0', route: 'Red', directionId: 0, minutes: 2 },
+          { from: 'J-0', to: 'Q-0', route: 'Red', directionId: 0, minutes: 2 },
+          { from: 'Q-0', to: 'B-0', route: 'Red', directionId: 0, minutes: 2 },
+        ],
+      },
+      pathways: {},
+    };
+    expect(towardsOf(data, 'Red', 0, 'A-0')).toBe('Ashmont/Braintree');
+    expect(towardsOf(data, 'Red', 0, 'Q-0')).toBe('Braintree');
+    expect(towardsOf(data, 'Red', 0, 'B-0')).toBe('Braintree');
+    expect(towardsOf(data, 'Red', 1, 'A-0')).toBe('Alewife'); // no edges that way: the station itself
+    const r = planStepFree(data, { from: 'A', to: 'Q' });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect((r.legs[0] as RideLeg).towards).toBe('Braintree');
+  });
+
+  it('adds entrance and exit names when the pathway nodes are named', () => {
+    const data = build(LINES);
+    data.pathways.O.nodes['O-door'].name = 'Main St (Elevator)';
+    const r = planStepFree(data, { from: 'O', to: 'D' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.originEntranceName).toBe('Main St (Elevator)');
+    expect(r.destinationExitName).toBeUndefined(); // D-door has no name
+    expect('destinationExitName' in r).toBe(false);
+  });
+});
+
+describe('mini-high platforms, partial status, elevator doors', () => {
+  const withBoarding = (facs: { id: string; type: 'ELEVATED_SUBPLATFORM' | 'PORTABLE_BOARDING_LIFT'; platformIds: string[] }[]) => {
+    const data: StaticData = build(LINES);
+    data.facilities = facs.map((f) => ({ ...f, stationId: 'O', name: f.id }));
+    data.stations.find((s) => s.id === 'O')!.facilityIds.push(...facs.map((f) => f.id));
+    return data;
+  };
+
+  it('a closed mini-high platform blocks only the platform it serves', () => {
+    const data = withBoarding([
+      { id: 'sub-O-0', type: 'ELEVATED_SUBPLATFORM', platformIds: ['O-Red-0'] },
+      { id: 'sub-O-1', type: 'ELEVATED_SUBPLATFORM', platformIds: ['O-Red-1'] },
+    ]);
+    expect(stationStatus(data, 'O')).toMatchObject({ stepFree: true, partial: false, blockedPlatforms: [] });
+    const closed = new Set(['sub-O-0']);
+    const s = stationStatus(data, 'O', closed);
+    expect(s.platforms).toEqual({ 'O-Red-0': false, 'O-Red-1': true });
+    expect(s).toMatchObject({ stepFree: true, partial: true, blockedBy: ['sub-O-0'] });
+    expect(s.blockedPlatforms).toEqual([{ platformId: 'O-Red-0', name: 'O-Red-0', facilityIds: ['sub-O-0'] }]);
+    // O-Red-0 is the only platform with trains towards X, so no step-free trip starts there now.
+    expect(planStepFree(data, { from: 'O', to: 'X' }).ok).toBe(true);
+    expect(planStepFree(data, { from: 'O', to: 'X', closed }).ok).toBe(false);
+    // Arriving at O uses the other platform, which is fine.
+    expect(planStepFree(data, { from: 'X', to: 'O', closed }).ok).toBe(true);
+  });
+
+  it('a mobile lift on the same platform keeps it step-free; a lift alone never gates a platform', () => {
+    const both = withBoarding([
+      { id: 'sub-O-0', type: 'ELEVATED_SUBPLATFORM', platformIds: ['O-Red-0'] },
+      { id: 'lift-O-0', type: 'PORTABLE_BOARDING_LIFT', platformIds: ['O-Red-0'] },
+    ]);
+    expect(stationStatus(both, 'O', new Set(['sub-O-0'])).platforms['O-Red-0']).toBe(true);
+    expect(stationStatus(both, 'O', new Set(['sub-O-0', 'lift-O-0'])).platforms['O-Red-0']).toBe(false);
+    const liftOnly = withBoarding([{ id: 'lift-O-0', type: 'PORTABLE_BOARDING_LIFT', platformIds: ['O-Red-0'] }]);
+    expect(stationStatus(liftOnly, 'O', new Set(['lift-O-0'])).platforms['O-Red-0']).toBe(true);
+  });
+
+  it('partial: one line closed at a transfer station lists the blocked platforms and the elevator', () => {
+    const data = build(LINES);
+    const s = stationStatus(data, 'T1', new Set(['EL-T1-Orange']));
+    expect(s.partial).toBe(true);
+    expect(s.blockedPlatforms).toEqual([
+      { platformId: 'T1-Orange-0', name: 'T1-Orange-0', facilityIds: ['EL-T1-Orange'] },
+      { platformId: 'T1-Orange-1', name: 'T1-Orange-1', facilityIds: ['EL-T1-Orange'] },
+    ]);
+    const none = stationStatus(data, 'X', new Set(['EL-X-Red']));
+    expect(none).toMatchObject({ stepFree: false, partial: false });
+    expect(none.blockedPlatforms.map((b) => b.facilityIds)).toEqual([['EL-X-Red'], ['EL-X-Red']]);
+  });
+
+  it('a door flagged not accessible still counts when an elevator ends at it (Copley Boylston St)', () => {
+    const data = build(LINES);
+    data.pathways.O.nodes['O-door'].wheelchair = 2;
+    data.pathways.O.nodes['O-lift'] = { kind: 'entrance', wheelchair: 2 };
+    data.pathways.O.edges.push(...pair('O-lift', 'O-mezz', 5, 'EL-O-street', 40), ...pair('O-lift', 'O-mezz', 2, null, 40));
+    expect(stationStatus(data, 'O').stepFree).toBe(true);
+    const r = planStepFree(data, { from: 'O', to: 'X' });
+    expect(r.ok && r.originEntranceId).toBe('O-lift');
+    expect(stationStatus(data, 'O', new Set(['EL-O-street'])).stepFree).toBe(false);
+  });
+
+  it('returns entrance and exit coordinates, falling back to the station name', () => {
+    const data = build(LINES);
+    Object.assign(data.pathways.O.nodes['O-door'], { lat: 42.3501, lon: -71.0601 });
+    Object.assign(data.pathways.D.nodes['D-door'], { name: 'Main St', lat: 42.3581, lon: -71.0501 });
+    const r = planStepFree(data, { from: 'O', to: 'D' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.originEntrance).toEqual({ id: 'O-door', name: 'O', lat: 42.3501, lon: -71.0601 });
+    expect(r.destinationExit).toEqual({ id: 'D-door', name: 'Main St', lat: 42.3581, lon: -71.0501 });
+    const noCoords = planStepFree(build(LINES), { from: 'O', to: 'D' });
+    expect(noCoords.ok && 'originEntrance' in noCoords).toBe(false);
+  });
+});
+
+describe('legs served by several branches', () => {
+  const st = (id: string, name: string, routes: RouteId[]): Station => ({
+    id, name, lat: 42.35, lon: -71.06, wheelchair: 1, routes, platformIds: [], entranceIds: [], facilityIds: [],
+  });
+  const plat = (id: string, stationId: string, routes: RouteId[]) => [id, { id, stationId, name: id, routes }] as const;
+
+  it('a leg ending where the line splits names both terminals (JFK/UMass)', () => {
+    const data: StaticData = {
+      stations: [st('P', 'Park', ['Red']), st('J', 'JFK', ['Red']), st('S', 'Ashmont', ['Red']), st('B', 'Braintree', ['Red'])],
+      network: {
+        platforms: Object.fromEntries([plat('P-0', 'P', ['Red']), plat('J-a', 'J', ['Red']), plat('J-b', 'J', ['Red']), plat('S-0', 'S', ['Red']), plat('B-0', 'B', ['Red'])]),
+        rides: [
+          { from: 'P-0', to: 'J-a', route: 'Red', directionId: 0, minutes: 3 },
+          { from: 'P-0', to: 'J-b', route: 'Red', directionId: 0, minutes: 2 },
+          { from: 'J-a', to: 'S-0', route: 'Red', directionId: 0, minutes: 2 },
+          { from: 'J-b', to: 'B-0', route: 'Red', directionId: 0, minutes: 2 },
+        ],
+      },
+      pathways: {},
+    };
+    const r = planStepFree(data, { from: 'P', to: 'J' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.legs[0]).toMatchObject({ kind: 'ride', toPlatform: 'J-b', towards: 'Ashmont/Braintree' });
+    expect((r.legs[0] as RideLeg).alsoRoutes).toBeUndefined();
+    const branch = planStepFree(data, { from: 'P', to: 'B' });
+    expect(branch.ok && (branch.legs[0] as RideLeg).towards).toBe('Braintree');
+  });
+
+  it('a shared trunk leg lists the other routes and merges their terminals', () => {
+    const G: RouteId[] = ['Green-B', 'Green-C'];
+    const data: StaticData = {
+      stations: [st('A', 'Park', G), st('K', 'Kenmore', G), st('BC', 'Boston College', ['Green-B']), st('CC', 'Cleveland Circle', ['Green-C'])],
+      network: {
+        platforms: Object.fromEntries([plat('A-0', 'A', G), plat('K-0', 'K', G), plat('BC-0', 'BC', ['Green-B']), plat('CC-0', 'CC', ['Green-C'])]),
+        rides: [
+          { from: 'A-0', to: 'K-0', route: 'Green-B', directionId: 0, minutes: 6 },
+          { from: 'K-0', to: 'BC-0', route: 'Green-B', directionId: 0, minutes: 20 },
+          { from: 'A-0', to: 'K-0', route: 'Green-C', directionId: 0, minutes: 6 },
+          { from: 'K-0', to: 'CC-0', route: 'Green-C', directionId: 0, minutes: 20 },
+        ],
+      },
+      pathways: {},
+    };
+    const r = planStepFree(data, { from: 'A', to: 'K' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const leg = r.legs[0] as RideLeg;
+    expect([leg.route, ...(leg.alsoRoutes ?? [])].sort()).toEqual(['Green-B', 'Green-C']);
+    expect(leg.towards).toBe('Boston College/Cleveland Circle');
+    const branch = planStepFree(data, { from: 'A', to: 'BC' });
+    expect(branch.ok && branch.legs[0]).toMatchObject({ route: 'Green-B', towards: 'Boston College' });
+    expect(branch.ok && (branch.legs[0] as RideLeg).alsoRoutes).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------- real data (only when the build has run)
 const DATA_DIR = path.resolve(__dirname, '..', 'public', 'data');
 const haveReal = ['stations.json', 'network.json', 'pathways.json'].every((f) => fs.existsSync(path.join(DATA_DIR, f)));
@@ -257,8 +439,70 @@ const haveReal = ['stations.json', 'network.json', 'pathways.json'].every((f) =>
 describe.skipIf(!haveReal)('real MBTA data', () => {
   const load = <T,>(f: string): T => JSON.parse(fs.readFileSync(path.join(DATA_DIR, f), 'utf8')) as T;
   const data: StaticData = haveReal
-    ? { stations: load('stations.json'), network: load('network.json'), pathways: load('pathways.json') }
+    ? {
+        stations: load('stations.json'),
+        network: load('network.json'),
+        pathways: load('pathways.json'),
+        facilities: fs.existsSync(path.join(DATA_DIR, 'facilities.json')) ? load('facilities.json') : [],
+      }
     : { stations: [], network: { platforms: {}, rides: [] }, pathways: {} };
+  const redLeg = (r: ReturnType<typeof planStepFree>, route = 'Red') =>
+    r.ok ? r.legs.find((l): l is RideLeg => l.kind === 'ride' && l.route === route) : undefined;
+
+  it('Central Avenue: closing the Ashmont-side mini-high blocks platform 70270 only', () => {
+    const open = stationStatus(data, 'place-cenav');
+    expect(open.platforms).toEqual({ '70269': true, '70270': true });
+    const closed = new Set(['subplat-cenav-1']);
+    const s = stationStatus(data, 'place-cenav', closed);
+    expect(s.platforms).toEqual({ '70269': true, '70270': false });
+    expect(s).toMatchObject({ stepFree: true, partial: true, blockedBy: ['subplat-cenav-1'] });
+    expect(s.blockedPlatforms).toEqual([{ platformId: '70270', name: 'Ashmont', facilityIds: ['subplat-cenav-1'] }]);
+    const r = planStepFree(data, { from: 'place-cenav', to: 'place-asmnl', closed });
+    if (r.ok) expect((r.legs[0] as RideLeg).fromPlatform).not.toBe('70270');
+  });
+
+  it('Copley to Park Street rides straight from the eastbound platform (elevator 976 door)', () => {
+    expect(stationStatus(data, 'place-coecl').platforms).toEqual({ '70154': true, '70155': true });
+    const r = planStepFree(data, { from: 'place-coecl', to: 'place-pktrm' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.transfers).toBe(0);
+    expect(r.legs[0]).toMatchObject({ kind: 'ride', fromPlatform: '70154' });
+    expect(r.originEntranceId).toBe('door-coecl-bpl');
+    expect(r.usedFacilityIds).toContain('976');
+    expect(r.minutes).toBeLessThan(10);
+  });
+
+  it('Red trips ending at JFK/UMass are towards Ashmont/Braintree', () => {
+    expect(redLeg(planStepFree(data, { from: 'place-pktrm', to: 'place-jfk' }))?.towards).toBe('Ashmont/Braintree');
+    expect(redLeg(planStepFree(data, { from: 'place-alfcl', to: 'place-jfk' }))?.towards).toBe('Ashmont/Braintree');
+  });
+
+  it('Green trunk legs list the other branches that run them', () => {
+    const r = planStepFree(data, { from: 'place-pktrm', to: 'place-kencl' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const legs = r.legs.filter((l): l is RideLeg => l.kind === 'ride');
+    expect(legs).toHaveLength(1);
+    expect([legs[0].route, ...(legs[0].alsoRoutes ?? [])].sort()).toEqual(['Green-B', 'Green-C', 'Green-D']);
+    expect(legs[0].towards).toBe('Boston College/Cleveland Circle/Riverside');
+    const back = planStepFree(data, { from: 'place-lech', to: 'place-pktrm' });
+    const g = back.ok ? (back.legs.find((l) => l.kind === 'ride') as RideLeg) : undefined;
+    expect(g && [g.route, ...(g.alsoRoutes ?? [])].sort()).toEqual(['Green-D', 'Green-E']);
+  });
+
+  it('routes carry entrance and exit coordinates near the station', () => {
+    const r = planStepFree(data, { from: 'place-jfk', to: 'place-pktrm' });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const jfk = data.stations.find((s) => s.id === 'place-jfk')!;
+    const pk = data.stations.find((s) => s.id === 'place-pktrm')!;
+    expect(r.originEntrance?.id).toBe(r.originEntranceId);
+    expect(r.destinationExit?.id).toBe(r.destinationExitId);
+    expect(haversineKm(jfk.lat, jfk.lon, r.originEntrance!.lat, r.originEntrance!.lon)).toBeLessThan(0.4);
+    expect(haversineKm(pk.lat, pk.lon, r.destinationExit!.lat, r.destinationExit!.lon)).toBeLessThan(0.4);
+    expect(r.originEntrance!.name).toBe(r.originEntranceName);
+  });
 
   it('Park Street to Downtown Crossing resolves with nothing closed', () => {
     const r = planStepFree(data, { from: 'place-pktrm', to: 'place-dwnxg' });
@@ -276,6 +520,27 @@ describe.skipIf(!haveReal)('real MBTA data', () => {
   it('a cross-line trip resolves (Alewife to Government Center)', () => {
     const r = planStepFree(data, { from: 'place-alfcl', to: 'place-gover' });
     expect(r.ok).toBe(true);
+  });
+
+  it('Red southbound on the shared trunk is towards Ashmont/Braintree, a Braintree-branch leg towards Braintree', () => {
+    const trunk = planStepFree(data, { from: 'place-pktrm', to: 'place-sstat' });
+    expect(trunk.ok).toBe(true);
+    if (trunk.ok) {
+      const red = trunk.legs.find((l): l is RideLeg => l.kind === 'ride' && l.route === 'Red');
+      expect(red?.towards).toBe('Ashmont/Braintree');
+      expect(typeof trunk.originEntranceName).toBe('string');
+      expect(typeof trunk.destinationExitName).toBe('string');
+    }
+    const branch = planStepFree(data, { from: 'place-pktrm', to: 'place-qnctr' });
+    if (branch.ok) {
+      const red = branch.legs.find((l): l is RideLeg => l.kind === 'ride' && l.route === 'Red');
+      expect(red?.towards).toBe('Braintree');
+    }
+    const north = planStepFree(data, { from: 'place-sstat', to: 'place-pktrm' });
+    if (north.ok) {
+      const red = north.legs.find((l): l is RideLeg => l.kind === 'ride' && l.route === 'Red');
+      expect(red?.towards).toBe('Alewife');
+    }
   });
 
   it('closing every facility at Downtown Crossing never yields a route that uses one', () => {

@@ -139,10 +139,13 @@ function naiveReach(sp: StationPathways, from: string[], to: string[], closed: S
   return false;
 }
 
+// A door flagged 2 still counts when an elevator ends at it (GTFS flags Copley's Boylston St door 2
+// for its stairs, but elevator 976 tops out there).
 function stepFreeDoors(data: StaticData, stationId: string): string[] {
   const sp = data.pathways[stationId];
+  const elevatorTop = (id: string) => sp.edges.some((e) => e.mode === 5 && e.facilityId && (e.from === id || e.to === id));
   return Object.entries(sp.nodes)
-    .filter(([, n]) => n.kind === 'entrance' && n.wheelchair !== 2)
+    .filter(([id, n]) => n.kind === 'entrance' && (n.wheelchair !== 2 || elevatorTop(id)))
     .map(([id]) => id);
 }
 
@@ -270,6 +273,27 @@ describe('router properties', () => {
             Object.keys(s.platforms).some((p) => !s.platforms[p] && after.platforms[p]) || (!s.stepFree && after.stepFree);
           expect(gained).toBe(true);
         }
+      }),
+      { numRuns: RUNS },
+    );
+  });
+
+  it('partial and blockedPlatforms agree with the per-platform result', () => {
+    fc.assert(
+      fc.property(caseArb, (c) => {
+        const { data, closed, from } = setup(c);
+        const s = stationStatus(data, from, closed);
+        const vals = Object.values(s.platforms);
+        expect(s.partial).toBe(s.stepFree && vals.some((v) => !v));
+        for (const b of s.blockedPlatforms) {
+          expect(s.platforms[b.platformId]).toBe(false);
+          for (const f of b.facilityIds) expect(s.blockedBy).toContain(f);
+          if (b.facilityIds.length) {
+            const reopened = new Set([...closed].filter((f) => !b.facilityIds.includes(f)));
+            expect(stationStatus(data, from, reopened).platforms[b.platformId]).toBe(true);
+          }
+        }
+        if (s.partial) expect(s.blockedPlatforms.length).toBe(vals.filter((v) => !v).length);
       }),
       { numRuns: RUNS },
     );

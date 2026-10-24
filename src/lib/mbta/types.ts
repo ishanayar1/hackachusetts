@@ -50,6 +50,8 @@ export interface PathwayNode {
   kind: NodeKind;
   wheelchair: Wheelchair; // entrances carry their own flag
   name?: string;
+  lat?: number; // set for entrances so walks can end at the step-free door
+  lon?: number;
 }
 /** Directed edge. Bidirectional GTFS rows are expanded into two edges at build time. */
 export interface PathwayEdge {
@@ -65,7 +67,13 @@ export interface StationPathways {
 }
 
 // ---------- static: public/data/facilities.json -> Facility[] ----------
-export type FacilityType = 'ELEVATOR' | 'ESCALATOR' | 'RAMP' | 'PORTABLE_BOARDING_LIFT' | 'BRIDGE_PLATE';
+export type FacilityType =
+  | 'ELEVATOR'
+  | 'ESCALATOR'
+  | 'RAMP'
+  | 'PORTABLE_BOARDING_LIFT'
+  | 'BRIDGE_PLATE'
+  | 'ELEVATED_SUBPLATFORM';
 export interface Facility {
   id: string; // same id in alerts informed_entity.facility, /facilities and GTFS
   type: FacilityType;
@@ -74,6 +82,7 @@ export interface Facility {
   shortName?: string;
   alternateServiceText?: string; // facilities_properties "alternate-service-text"
   excludesStops?: string[]; // facilities_properties "excludes-stop"
+  platformIds?: string[]; // platforms this facility gives step-free boarding to (subplatforms, lifts)
 }
 
 // ---------- static: public/data/parking.json -> ParkingLot[] (subway-served lots only) ----------
@@ -105,6 +114,8 @@ export interface NormalizedAlert {
   lifecycle: string; // NEW | ONGOING | UPCOMING | ONGOING_UPCOMING
   activePeriods: { start: string; end: string | null }[];
   activeNow: boolean;
+  datesKnown?: boolean; // false when MBTA sent placeholder periods (Unix epoch); activeNow then follows lifecycle
+  informational?: boolean; // amenity/parking notices that are not service disruptions
   stationIds: string[]; // parent "place-*" ids (platform ids mapped to parents), deduped
   routeIds: string[];
   facilityIds: string[];
@@ -134,6 +145,7 @@ export interface Vehicle {
   stationId: string | null; // parent of the current stop
   headsign: string | null;
   updatedAt: string;
+  stale?: boolean; // position not updated for more than 5 minutes
 }
 
 // ---------- API envelope returned by every /api/* route ----------
