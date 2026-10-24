@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gateRedirect, ProfileSchema, type Profile } from '@/lib/profile';
+import { defaultTab, gateRedirect, ProfileSchema, startLayers, type Profile } from '@/lib/profile';
 
 const ok: Profile = {
   service: 'drive',
@@ -52,5 +52,19 @@ describe('ProfileSchema', () => {
       'wheelchair',
       'stroller',
     ]);
+  });
+});
+
+describe('profile drives the first screen', () => {
+  it('opens the planner that matches the main service', () => {
+    expect(defaultTab({ ...ok, service: 'transit' })).toBe('trip');
+    expect(defaultTab({ ...ok, service: 'drive' })).toBe('drive');
+    expect(defaultTab({ ...ok, service: 'park-ride' })).toBe('drive');
+  });
+
+  it('turns curb ramps on for wheelchair, scooter, cane or walker users', () => {
+    expect(startLayers({ ...ok, needs: ['wheelchair'] })).toEqual({ ramps: true });
+    expect(startLayers({ ...ok, needs: ['walker'] })).toEqual({ ramps: true });
+    expect(startLayers({ ...ok, needs: ['stroller'] })).toEqual({});
   });
 });

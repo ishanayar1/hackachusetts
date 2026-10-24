@@ -16,6 +16,7 @@ import type { CrashMode } from '@/lib/ui/format';
 import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeojson } from '@/lib/ui/geo';
 import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
 import { DEFAULT_CRASH_MODE, facilityTypeWord, formatClock, isPartial, routeName } from '@/lib/ui/format';
+import { startLayers, type Profile } from '@/lib/profile';
 import { useMapSkin } from '@/lib/ui/map-skins';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
 import Account from './Account';
@@ -169,10 +170,10 @@ function MapFeatureCard({
   );
 }
 
-export default function LastMileApp() {
+export default function LastMileApp({ profile }: { profile: Profile }) {
   const { stations, byId, sorted, error: stationsError } = useStations();
   const status = useStationsStatus();
-  const [tab, setTab] = useState('broken');
+  const [tab, setTab] = useState('trip');
   const [selectedStationId, setSelectedStationId] = useState<string | null>(null);
   const [selectedHex, setSelectedHex] = useState<CrashHex | null>(null);
   const [crashMode, setCrashMode] = useState<CrashMode>(DEFAULT_CRASH_MODE);
@@ -194,7 +195,7 @@ export default function LastMileApp() {
   const walkFc = useMemo(() => walkGeojson(walkLines), [walkLines]);
 
   // Optional map layers: each file / feed is fetched only once its layer is turned on.
-  const [layers, setLayers] = useState<MapLayerToggles>(DEFAULT_LAYERS);
+  const [layers, setLayers] = useState<MapLayerToggles>(() => ({ ...DEFAULT_LAYERS, ...startLayers(profile) }));
   const [feature, setFeature] = useState<MapFeatureInfo | null>(null);
   const vehicles = useVehicles(layers.trains);
   const fatal = useStaticFile<FatalCrash[]>('/data/fatalities.json', layers.fatal);
@@ -452,6 +453,7 @@ export default function LastMileApp() {
                   onRoute={setLegs}
                   onWalk={setWalkLines}
                   onSelectStation={selectStation}
+                  places={profile.places}
                 />
               ),
             },

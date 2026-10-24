@@ -52,11 +52,12 @@ type RouteOkPlus = RouteOk & {
 type RideLegPlus = RideLeg & { towards?: string; alsoRoutes?: string[] };
 
 const hasCoords = (d: Door | undefined): d is Door => !!d && Number.isFinite(d.lat) && Number.isFinite(d.lon);
-type StartMode = 'station' | 'here' | 'demo';
+type StartMode = 'station' | 'saved' | 'here' | 'demo';
 type EndMode = 'station' | 'place';
 
 const START_CHOICES: [StartMode, string][] = [
   ['station', 'A station'],
+  ['saved', 'One of my places'],
   ['here', 'My location'],
   ['demo', "Pretend I'm at Park Street (demo)"],
 ];
@@ -75,9 +76,11 @@ type Props = {
   /** Walking lines ([lon, lat] lists) to draw dashed on the map, or null. */
   onWalk?: (lines: [number, number][][] | null) => void;
   onSelectStation: (id: string) => void;
+  /** Saved places from the profile (Home, Work, ...), offered as start and destination. */
+  places?: Place[];
 };
 
-export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onSelectStation }: Props) {
+export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onSelectStation, places = [] }: Props) {
   const ids = useId();
   const t = useT();
   const [from, setFrom] = useState('');
@@ -159,7 +162,7 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
   const chooseStart = (m: StartMode) => {
     setStartMode(m);
     setLocError('');
-    if (m === 'station') setPlace(null);
+    if (m === 'station' || m === 'saved') setPlace(null);
     else if (m === 'demo') setStartPlace(DEMO_PLACE);
     else {
       setPlace(null);
@@ -168,7 +171,7 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
   };
 
   const chooseDestPlace = (label: string) => {
-    const p = DEMO_DESTINATIONS.find((d) => d.label === label) ?? null;
+    const p = [...places, ...DEMO_DESTINATIONS].find((d) => d.label === label) ?? null;
     setDestPlace(p);
     if (p) {
       const near = nearestStepFree(p, stations, live);
@@ -204,7 +207,7 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
         <fieldset>
           <legend className="text-sm font-semibold text-slate-900">{t('Start from')}</legend>
           <div className="mt-1">
-            {START_CHOICES.map(([m, label]) => (
+            {START_CHOICES.filter(([m]) => m !== 'saved' || places.length > 0).map(([m, label]) => (
               <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
                 <input
                   type="radio"
@@ -218,6 +221,30 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
               </label>
             ))}
           </div>
+          {startMode === 'saved' && (
+            <div className="mt-1">
+              <label htmlFor={`${ids}-saved`} className="block text-sm font-semibold text-slate-900">
+                {t('Start at')}
+              </label>
+              <select
+                id={`${ids}-saved`}
+                value={place?.label ?? ''}
+                onChange={(e) => {
+                  const p = places.find((x) => x.label === e.target.value);
+                  if (p) setStartPlace(p);
+                  else setPlace(null);
+                }}
+                className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
+              >
+                <option value="">{t('Choose a place')}</option>
+                {places.map((p) => (
+                  <option key={p.label} value={p.label}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div aria-live="polite" className="text-sm text-slate-800">
             {startMode === 'here' && locating && <p>{t('Finding your location…')}</p>}
             {startMode !== 'station' && place && !locating && (
@@ -284,11 +311,22 @@ export default function TripPlanner({ stations, byId, live, onRoute, onWalk, onS
                 className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
               >
                 <option value="">{t('Choose a place')}</option>
-                {DEMO_DESTINATIONS.map((p) => (
-                  <option key={p.label} value={p.label}>
-                    {p.label}
-                  </option>
-                ))}
+                {places.length > 0 && (
+                  <optgroup label={t('Your places')}>
+                    {places.map((p) => (
+                      <option key={p.label} value={p.label}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                <optgroup label={t('Examples')}>
+                  {DEMO_DESTINATIONS.map((p) => (
+                    <option key={p.label} value={p.label}>
+                      {p.label}
+                    </option>
+                  ))}
+                </optgroup>
               </select>
               {destPlace && (
                 <p aria-live="polite" className="mt-1 text-sm text-slate-800">

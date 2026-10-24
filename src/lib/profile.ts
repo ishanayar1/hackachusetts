@@ -38,3 +38,13 @@ export function gateRedirect(session: { user: { profile?: unknown } } | null): '
   return ProfileSchema.safeParse(session.user.profile).success ? null : '/welcome';
 }
 
+
+/** The tab the app opens on: the subway planner, or the drive planner for car and park & ride users. */
+export function defaultTab(p: Profile): 'trip' | 'drive' {
+  return p.service === 'transit' ? 'trip' : 'drive';
+}
+
+/** Map layers to switch on at start for these needs (curb ramp problems matter on wheels and with a walker). */
+export function startLayers(p: Profile): { ramps?: true } {
+  return p.needs.some((n) => n === 'wheelchair' || n === 'walker') ? { ramps: true } : {};
+}
