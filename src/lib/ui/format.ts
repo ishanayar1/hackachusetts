@@ -3,6 +3,7 @@ import type {
   BlockedPlatform,
   CrashHex,
   CrashSpot,
+  MapLayerToggles,
   NormalizedAlert,
   Prediction,
   Station,
@@ -245,10 +246,28 @@ export const RECORDED_BINS = [
 /** Bins for the team model's estimate per intersection (risk_yr; top 15% / 8% / 2% start at 0.5 / 1 / 2). */
 export const MODEL_BINS = [
   { min: 0, label: 'Under 0.5 a year', color: '#e9d8fd' },
-  { min: 0.5, label: '0.5 to 1 a year', color: '#b197fc' },
-  { min: 1, label: '1 to 2 a year', color: '#7048e8' },
-  { min: 2, label: '2 or more a year', color: '#3b1a8c' },
+  { min: 0.5, label: '0.5 to 1 a year', color: '#facc15' },
+  { min: 1, label: '1 to 2 a year', color: '#f97316' },
+  { min: 2, label: '2 or more a year', color: '#dc2626' },
 ];
+
+/** The map opens on the model estimate, without the low-risk bin and with every optional layer off. */
+export const DEFAULT_CRASH_MODE: CrashMode = 'model';
+export const MODEL_MIN_SHOWN = MODEL_BINS[1].min;
+export const DEFAULT_LAYERS: MapLayerToggles = {
+  trains: false,
+  fatal: false,
+  danger: false,
+  equity: false,
+  ramps: false,
+  // The one optional layer on by default: step-free equipment is what this app is for.
+  access: true,
+};
+
+/** MapLibre filter for the crash layer: the model hides intersections under MODEL_MIN_SHOWN a year. */
+export function crashFilter(mode: CrashMode): unknown[] | undefined {
+  return mode === 'model' ? ['>=', ['get', 'risk_yr'], MODEL_MIN_SHOWN] : undefined;
+}
 
 export function binLabel(value: number, bins: { min: number; label: string }[]): string {
   let out = bins[0].label;

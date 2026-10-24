@@ -1,5 +1,4 @@
 'use client';
-import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { btn, btnPrimary, Notice } from '@/components/ui';
@@ -62,7 +61,7 @@ export default function LoginForm({ providers }: { providers: (keyof typeof LABE
 
       <button
         type="button"
-        className="text-sm font-semibold text-blue-800 underline"
+        className="min-h-11 text-sm font-semibold text-blue-800 underline"
         onClick={() => {
           setMode(mode === 'in' ? 'up' : 'in');
           setError(null);
@@ -85,10 +84,6 @@ export default function LoginForm({ providers }: { providers: (keyof typeof LABE
           ))}
         </div>
       )}
-
-      <Link href="/" className="block text-sm text-slate-700 underline">
-        Back to the map
-      </Link>
     </div>
   );
 }

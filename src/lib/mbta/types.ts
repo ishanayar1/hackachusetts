@@ -83,6 +83,9 @@ export interface Facility {
   alternateServiceText?: string; // facilities_properties "alternate-service-text"
   excludesStops?: string[]; // facilities_properties "excludes-stop"
   platformIds?: string[]; // platforms this facility gives step-free boarding to (subplatforms, lifts)
+  lat?: number; // map position: GTFS facility_lat, else its pathway, else the station (approx)
+  lon?: number;
+  approx?: boolean; // true when placed at the station point
 }
 
 // ---------- static: public/data/parking.json -> ParkingLot[] (subway-served lots only) ----------

@@ -22,6 +22,7 @@ import {
   type Wheelchair,
 } from '../src/lib/mbta/types';
 import type { Headways } from '../src/lib/router';
+import { facilityPosition } from '../src/lib/access-points';
 
 const ROOT = path.resolve(__dirname, '..');
 const RAW_DIR = path.join(ROOT, 'data', 'raw');
@@ -361,6 +362,7 @@ async function main() {
   }
   const prop = (id: string, key: string) => props.get(id)?.find((p) => p.property_id === key)?.value;
   const facRows = csv(text('facilities.txt'));
+  const facOwn = new Map<string, { lat: number; lon: number }>(); // GTFS facility_lat/lon, when given
   const facilities: Facility[] = [];
   const parking: ParkingLot[] = [];
   const ridePlatforms = new Set(rides.flatMap((r) => [r.from, r.to]));
@@ -370,6 +372,9 @@ async function main() {
     const type = FACILITY_TYPES[f.facility_type];
     if (type) {
       const fac: Facility = { id: f.facility_id, type, stationId, name: f.facility_long_name || f.facility_short_name };
+      const flat = num(f.facility_lat);
+      const flon = num(f.facility_lon);
+      if (flat !== null && flon !== null) facOwn.set(f.facility_id, { lat: flat, lon: flon });
       if (f.facility_short_name) fac.shortName = f.facility_short_name;
       const alt = prop(f.facility_id, 'alternate-service-text');
       if (alt) fac.alternateServiceText = alt;
@@ -504,6 +509,42 @@ async function main() {
     synthetic++;
   }
 
+  // ---------- map points: elevators, lifts, ramps (own coordinate -> pathway -> station) and doors ----------
+  const stopCoord = (id: string) => {
+    const st = stops.get(id);
+    const lat = num(st?.stop_lat);
+    const lon = num(st?.stop_lon);
+    return lat !== null && lon !== null ? { lat, lon } : null;
+  };
+  const stationById = new Map(stations.map((st) => [st.id, st]));
+  const accessCount = { own: 0, pathway: 0, approx: 0, doors: 0 };
+  const accessFeatures: GeoJSON.Feature<GeoJSON.Point>[] = [];
+  for (const fac of facilities) {
+    const st = stationById.get(fac.stationId)!;
+    const own = facOwn.get(fac.id) ?? null;
+    const at = facilityPosition(fac.id, pathways[fac.stationId]?.edges ?? [], stopCoord, own, st);
+    accessCount[own ? 'own' : at.approx ? 'approx' : 'pathway']++;
+    fac.lat = at.lat;
+    fac.lon = at.lon;
+    if (at.approx) fac.approx = true;
+    accessFeatures.push({
+      type: 'Feature',
+      properties: { id: fac.id, kind: fac.type, name: fac.shortName ?? fac.name, stationId: fac.stationId, approx: at.approx },
+      geometry: { type: 'Point', coordinates: [at.lon, at.lat] },
+    });
+  }
+  for (const [sid, sp] of Object.entries(pathways)) {
+    for (const [id, n] of Object.entries(sp.nodes)) {
+      if (n.kind !== 'entrance' || n.lat === undefined || n.lon === undefined || id.startsWith('street-')) continue;
+      accessCount.doors++;
+      accessFeatures.push({
+        type: 'Feature',
+        properties: { id, kind: 'ENTRANCE', name: n.name ?? id, stationId: sid, approx: false, wheelchair: n.wheelchair },
+        geometry: { type: 'Point', coordinates: [n.lon, n.lat] },
+      });
+    }
+  }
+
   // ---------- line shapes ----------
   const shapeIds = new Set<string>();
   const shapeMeta: { shapeId: string; route: RouteId; pattern: string }[] = [];
@@ -553,12 +594,17 @@ async function main() {
     write('facilities.json', facilities),
     write('parking.json', parking),
     write('lines.geojson', lines),
+    write('access.geojson', { type: 'FeatureCollection', features: accessFeatures }),
   ];
   console.log(
     `stations=${stations.length} (accessible ${acc}, not ${stations.filter((s) => s.wheelchair === 2).length}) | ` +
       `platforms=${Object.keys(platforms).length} rides=${rides.length} | ` +
       `pathways stations=${Object.keys(pathways).length} rows=${pathwayRows} edges=${edgeCount} street-level=${synthetic} | ` +
       `facilities=${facilities.length} (elevators ${elevators}) | parking=${parking.length} | lines=${features.length}`,
+  );
+  console.log(
+    `access: ${facilities.length} facilities (own ${accessCount.own}, pathway ${accessCount.pathway}, ` +
+      `approx ${accessCount.approx}), ${accessCount.doors} doors`,
   );
   console.log(sizes.join(', '));
 }

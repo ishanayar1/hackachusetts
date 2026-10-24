@@ -52,11 +52,12 @@ type RouteOkPlus = RouteOk & {
 type RideLegPlus = RideLeg & { towards?: string; alsoRoutes?: string[] };
 
 const hasCoords = (d: Door | undefined): d is Door => !!d && Number.isFinite(d.lat) && Number.isFinite(d.lon);
-type StartMode = 'station' | 'here' | 'demo' | 'map';
+type StartMode = 'station' | 'saved' | 'here' | 'demo' | 'map';
 type EndMode = 'station' | 'place' | 'map';
 
 const START_CHOICES: [StartMode, string][] = [
   ['station', 'A station'],
+  ['saved', 'One of my places'],
   ['here', 'My location'],
   ['demo', "Pretend I'm at Park Street (demo)"],
   ['map', 'A spot on the map'],
@@ -127,6 +128,10 @@ type Props = {
   /** Start the step-by-step view (the map's trip bar). */
   onStart?: () => void;
   onSelectStation: (id: string) => void;
+  /** Saved places from the profile (Home, Work, ...), offered as start and destination. */
+  places?: Place[];
+  /** Start station handed over by park & ride (seq changes on every hand-over). */
+  presetFrom?: { id: string; seq: number } | null;
   ref?: Ref<TripPlannerHandle>;
 };
 
@@ -140,6 +145,8 @@ export default function TripPlanner({
   onTrip,
   onStart,
   onSelectStation,
+  places = [],
+  presetFrom,
   ref,
 }: Props) {
   const ids = useId();
@@ -220,6 +227,16 @@ export default function TripPlanner({
     onPlaces?.(tripStart, tripEnd);
   }, [tripStart, tripEnd, onPlaces]);
 
+  // Park & ride: the car is parked at this station, so the trip starts there. Adjusting state while
+  // rendering (not in an effect) when the hand-over changes, as React recommends.
+  const [presetSeen, setPresetSeen] = useState(presetFrom?.seq);
+  if (presetFrom && presetFrom.seq !== presetSeen) {
+    setPresetSeen(presetFrom.seq);
+    setStartMode('station');
+    setPlace(null);
+    setFrom(presetFrom.id);
+  }
+
   const nameOf = (id: string) => byId.get(id)?.name ?? id;
   const routeText = useRouteText(ok, nameOf);
 
@@ -276,7 +293,7 @@ export default function TripPlanner({
   const chooseStart = (m: StartMode) => {
     setStartMode(m);
     setLocError('');
-    if (m === 'station') setPlace(null);
+    if (m === 'station' || m === 'saved') setPlace(null);
     else if (m === 'demo') setStartPlace(DEMO_PLACE);
     else if (m === 'map') {
       if (mapStart) setStartPlace(mapStart);
@@ -295,7 +312,7 @@ export default function TripPlanner({
   };
 
   const chooseDestPlace = (label: string) => {
-    const p = DEMO_DESTINATIONS.find((d) => d.label === label) ?? null;
+    const p = [...places, ...DEMO_DESTINATIONS].find((d) => d.label === label) ?? null;
     setDestPlace(p);
     if (p) {
       const near = nearestStepFree(p, stations, live);
@@ -385,7 +402,7 @@ export default function TripPlanner({
       <fieldset>
         <legend className="text-sm font-semibold text-slate-900">{t('Start from')}</legend>
         <div className="mt-1">
-          {START_CHOICES.map(([m, label]) => (
+          {START_CHOICES.filter(([m]) => m !== 'saved' || places.length > 0).map(([m, label]) => (
             <label key={m} className="flex min-h-11 items-center gap-2 text-sm text-slate-900">
               <input
                 type="radio"
@@ -399,6 +416,30 @@ export default function TripPlanner({
             </label>
           ))}
         </div>
+        {startMode === 'saved' && (
+          <div className="mt-1">
+            <label htmlFor={`${ids}-saved`} className="block text-sm font-semibold text-slate-900">
+              {t('Start at')}
+            </label>
+            <select
+              id={`${ids}-saved`}
+              value={place?.label ?? ''}
+              onChange={(e) => {
+                const p = places.find((x) => x.label === e.target.value);
+                if (p) setStartPlace(p);
+                else setPlace(null);
+              }}
+              className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
+            >
+              <option value="">{t('Choose a place')}</option>
+              {places.map((p) => (
+                <option key={p.label} value={p.label}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
         <div aria-live="polite" className="text-sm text-slate-800">
           {startMode === 'here' && locating && <p>{t('Finding your location…')}</p>}
           {startMode === 'map' && !place && <p>{t('Tap a spot on the map, then choose Start here.')}</p>}
@@ -477,11 +518,22 @@ export default function TripPlanner({
               className="mt-1 min-h-11 w-full rounded-md border border-slate-600 bg-white px-2 text-base text-slate-900"
             >
               <option value="">{t('Choose a place')}</option>
-              {DEMO_DESTINATIONS.map((p) => (
-                <option key={p.label} value={p.label}>
-                  {p.label}
-                </option>
-              ))}
+              {places.length > 0 && (
+                <optgroup label={t('Your places')}>
+                  {places.map((p) => (
+                    <option key={p.label} value={p.label}>
+                      {p.label}
+                    </option>
+                  ))}
+                </optgroup>
+              )}
+              <optgroup label={t('Examples')}>
+                {DEMO_DESTINATIONS.map((p) => (
+                  <option key={p.label} value={p.label}>
+                    {p.label}
+                  </option>
+                ))}
+              </optgroup>
             </select>
             {destPlace && (
               <p aria-live="polite" className="mt-1 text-sm text-slate-800">

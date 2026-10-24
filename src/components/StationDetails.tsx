@@ -115,9 +115,12 @@ export default function StationDetails({
 
       {lifts.length > 0 && (
         <>
-          <h3 className="mt-3 font-semibold text-slate-900">{tr('Elevators and lifts')}</h3>
-          <ul className="mt-1 space-y-1 text-sm">
-            {lifts.map((f) => (
+          {/* Out-of-service equipment stays in view; the full list is folded because the map shows it. */}
+          {lifts.some((f) => f.closed) && (
+            <>
+              <h3 className="mt-3 font-semibold text-slate-900">{tr('Out of service here')}</h3>
+              <ul className="mt-1 space-y-1 text-sm">
+                {lifts.filter((f) => f.closed).map((f) => (
               <li key={f.id} className="flex items-start gap-2 text-slate-900">
                 <span aria-hidden="true" className={f.closed ? 'font-bold text-red-700' : 'font-bold text-emerald-800'}>
                   {f.closed ? '✕' : '✓'}
@@ -129,8 +132,30 @@ export default function StationDetails({
                   )}
                 </span>
               </li>
-            ))}
-          </ul>
+                ))}
+              </ul>
+            </>
+          )}
+          <details className="mt-3">
+            <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-slate-900">
+              {tr('All elevators and lifts here ({n}), also on the map', { n: lifts.length })}
+            </summary>
+            <ul className="mt-1 space-y-1 text-sm">
+              {lifts.map((f) => (
+              <li key={f.id} className="flex items-start gap-2 text-slate-900">
+                <span aria-hidden="true" className={f.closed ? 'font-bold text-red-700' : 'font-bold text-emerald-800'}>
+                  {f.closed ? '✕' : '✓'}
+                </span>
+                <span>
+                  <strong>{tr(f.closed ? 'Out of service' : 'Working')}</strong> ({tr(facilityTypeWord(f.type))}): {f.shortName ?? f.name}
+                  {f.closed && f.alternateServiceText && (
+                    <span className="mt-0.5 block text-slate-800">{tr('MBTA suggests:')} {f.alternateServiceText}</span>
+                  )}
+                </span>
+              </li>
+              ))}
+            </ul>
+          </details>
         </>
       )}
 
