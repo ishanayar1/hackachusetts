@@ -4,8 +4,9 @@ Vision Zero crash-risk web app (Flask backend).
 Routes
 ------
 GET /                 -> the single-page app (index.html)
-GET /api/risk         -> risk.geojson (hexagons with risk + location names)
-GET /api/locations    -> ranked list of locations; supports ?q= search & ?limit=
+GET /api/risk         -> risk.geojson (intersection points with risk + details)
+GET /api/locations    -> ranked list of intersections; ?q= searches name or
+                         neighborhood, ?limit= caps the count
 GET /api/stats        -> summary stats for the dashboard header
 
 Run:  python3 app.py   (regenerates risk.geojson on first run if missing)
@@ -58,14 +59,15 @@ def api_risk():
 def api_locations():
     """Ranked, searchable list of locations for the sidebar."""
     q = (request.args.get("q") or "").strip().lower()
-    limit = int(request.args.get("limit", 100))
+    limit = request.args.get("limit", 100, type=int)
 
     rows = []
     for f in load_features():
         p = f["properties"]
         rows.append({
-            "hex": p["hex"],
+            "site": p["site"],
             "label": p.get("label", "Unknown location"),
+            "neighborhood": p.get("neighborhood", ""),
             "risk_yr": p.get("risk_yr", 0),
             "risk_norm": p.get("risk_norm", 0),
             "lat": p.get("lat"),
@@ -77,7 +79,8 @@ def api_locations():
         })
 
     if q:
-        rows = [r for r in rows if q in r["label"].lower()]
+        rows = [r for r in rows
+                if q in r["label"].lower() or q in r["neighborhood"].lower()]
     rows.sort(key=lambda r: r["risk_yr"], reverse=True)
     return jsonify({"count": len(rows), "results": rows[:limit]})
 
@@ -91,7 +94,7 @@ def api_stats():
     ped = sum(f["properties"].get("ped", 0) for f in feats)
     bike = sum(f["properties"].get("bike", 0) for f in feats)
     return jsonify({
-        "hexagons": len(feats),
+        "intersections": len(feats),
         "historical_crashes": total_hist,
         "top_risk_yr": risks[0] if risks else 0,
         "by_mode": {"mv": mv, "ped": ped, "bike": bike},
