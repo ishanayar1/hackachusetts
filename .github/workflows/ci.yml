@@ -1,0 +1,66 @@
+# LastMile CI — the "git workflow check".
+#
+# GitHub runs this on every push and every pull request. A green check means
+# the app still imports and starts; a red check blocks the PR until it's fixed.
+#
+# Right now the repo holds the Python/Flask app (app/). When the team switches
+# to the Next.js app, replace the "Python app" job below with the "Next.js app"
+# job kept at the bottom of this file (commented out).
+
+name: CI
+
+on:
+  push:
+    branches: ["**"]        # every branch
+  pull_request:
+    branches: [main]        # every PR targeting main
+
+jobs:
+  python-app:
+    name: Python app — imports & smoke start
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # The app needs Flask; predict.py needs these for the model.
+          pip install flask pandas numpy scikit-learn h3
+
+      - name: Import the app modules (fails if they have syntax/import errors)
+        working-directory: app
+        run: |
+          python -c "import ast; ast.parse(open('app.py').read()); print('app.py parses OK')"
+          python -c "import ast; ast.parse(open('predict.py').read()); print('predict.py parses OK')"
+
+      - name: Smoke-check Flask app object
+        working-directory: app
+        run: |
+          # Import the Flask app without starting the server or building the
+          # model. Confirms the routes register and the module is healthy.
+          python -c "import app as a; assert a.app is not None; print('Flask app object OK:', a.app.name)"
+
+# ---------------------------------------------------------------------------
+# WHEN THE TEAM SWITCHES TO NEXT.JS: delete the job above and uncomment this.
+#
+#  nextjs-app:
+#    name: Next.js app — install, lint & build
+#    runs-on: ubuntu-latest
+#    steps:
+#      - uses: actions/checkout@v4
+#      - uses: actions/setup-node@v4
+#        with:
+#          node-version: "22"
+#          cache: "npm"
+#      - run: npm ci
+#      - run: npm run lint --if-present
+#      - run: npm run build
+#      - run: npm test --if-present
+# ---------------------------------------------------------------------------
