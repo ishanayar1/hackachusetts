@@ -1,7 +1,7 @@
 // GET /api/route?from=place-a&to=place-b&closed=id1,id2
 // `closed` adds demo closures (the "break this elevator" button) on top of live alert closures.
 import { connection } from 'next/server';
-import { getLiveAlerts, parseClosedParam, planWithClosures } from '@/lib/lastmile-service';
+import { getAlertsOrDemo, parseClosedParam, planWithClosures } from '@/lib/lastmile-service';
 import { envelope, getParentOf, loadDemoAlerts, unavailable } from '@/lib/server/mbta';
 import { getStaticData } from '@/lib/server/static-data';
 import { STATION_ID_RE } from '@/lib/static-data-fs';
@@ -26,7 +26,7 @@ export async function GET(request: Request) {
     return unavailable('Static data');
   }
   try {
-    const live = await getLiveAlerts(getParentOf(), () => loadDemoAlerts(url.origin));
+    const live = await getAlertsOrDemo(getParentOf(), () => loadDemoAlerts(url.origin));
     const body = envelope(planWithClosures(data, from, to, live.closedFacilityIds, extra), live.result);
     const cacheControl = q.has('closed') ? 'private, no-store' : 'public, s-maxage=30, stale-while-revalidate=60';
     return Response.json(body, { headers: { 'Cache-Control': cacheControl } });

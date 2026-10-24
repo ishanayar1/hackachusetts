@@ -2,7 +2,8 @@ import 'server-only';
 import { readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type { ApiEnvelope } from '@/lib/mbta/types';
+import type { ApiEnvelope, Prediction } from '@/lib/mbta/types';
+import { normalizePredictions } from '@/lib/mbta/live';
 import type { MbtaResult } from '@/lib/mbta/client';
 import type { ParentOf } from '@/lib/mbta/alerts';
 
@@ -60,16 +61,66 @@ export function getParentOf(): ParentOf {
   return (id) => m.get(id) ?? (id.startsWith('place-') ? id : undefined);
 }
 
-/** Raw V3 alerts snapshot from public/data/demo-alerts.json; falls back to fetching it from our own origin. */
-export async function loadDemoAlerts(origin?: string): Promise<unknown> {
+const demoCache = new Map<string, unknown>();
+
+/** A demo snapshot from public/data (read once); falls back to fetching it from our own origin. */
+export async function loadDemoFile(file: string, origin?: string): Promise<unknown> {
+  if (demoCache.has(file)) return demoCache.get(file);
+  let body: unknown;
   try {
-    return JSON.parse(await readFile(path.join(DATA_DIR, 'demo-alerts.json'), 'utf8'));
+    body = JSON.parse(await readFile(path.join(DATA_DIR, file), 'utf8'));
   } catch {
-    if (!origin) throw new Error('demo alerts unavailable');
-    const res = await fetch(`${origin}/data/demo-alerts.json`, { signal: AbortSignal.timeout(5000) });
-    if (!res.ok) throw new Error('demo alerts unavailable');
-    return res.json();
+    if (!origin) throw new Error(`${file} unavailable`);
+    const res = await fetch(`${origin}/data/${file}`, { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`${file} unavailable`);
+    body = await res.json();
   }
+  demoCache.set(file, body);
+  return body;
+}
+
+/** Raw V3 alerts snapshot from public/data/demo-alerts.json; falls back to fetching it from our own origin. */
+export function loadDemoAlerts(origin?: string): Promise<unknown> {
+  return loadDemoFile('demo-alerts.json', origin);
+}
+
+/** Raw V3 vehicles snapshot from public/data/demo-vehicles.json. */
+export function loadDemoVehicles(origin?: string): Promise<unknown> {
+  return loadDemoFile('demo-vehicles.json', origin);
+}
+
+/**
+ * Predictions from public/data/demo-predictions.json ({ capturedAt, stations: { [placeId]: V3 body } }),
+ * normalized as of capture time and shifted forward so the countdowns read as if captured just now.
+ * Stations not in the snapshot (or a missing file) give an empty list.
+ */
+export async function demoPredictions(stops: string[], parentOf: ParentOf, origin?: string): Promise<Prediction[]> {
+  type Snap = { capturedAt?: string; stations?: Record<string, unknown> } | null;
+  let snap: Snap;
+  try {
+    snap = (await loadDemoFile('demo-predictions.json', origin)) as Snap;
+  } catch {
+    return [];
+  }
+  const capturedMs = Date.parse(snap?.capturedAt ?? '');
+  if (!snap?.stations || Number.isNaN(capturedMs)) return [];
+  const shift = Math.max(0, Date.now() - capturedMs);
+  const want = new Set(stops);
+  const out: Prediction[] = [];
+  for (const stop of stops) {
+    const body = snap.stations[stop];
+    if (!body) continue;
+    for (const p of normalizePredictions(body, new Date(capturedMs), parentOf)) {
+      if (!want.has(p.stationId)) continue;
+      out.push({ ...p, time: new Date(Date.parse(p.time) + shift).toISOString() });
+    }
+  }
+  return out.sort((x, y) => Date.parse(x.time) - Date.parse(y.time));
+}
+
+/** Result stub for data served from a bundled demo snapshot. */
+export function demoResult(): MbtaResult {
+  return { body: null, source: 'demo', fetchedAt: Date.now() };
 }
 
 export function envelope<T>(data: T, r: MbtaResult): ApiEnvelope<T> {

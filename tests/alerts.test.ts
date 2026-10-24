@@ -59,6 +59,23 @@ describe('normalizeAlerts (fixture)', () => {
     for (const a of elev) for (const f of a.facilityIds) expect(closed.has(f)).toBe(true);
   });
 
+  it('epoch placeholder period: no fake dates, active by lifecycle, facility closed', () => {
+    const ep = alerts.find((a) => a.id === 'synthetic-epoch-907')!;
+    expect(ep).toBeDefined();
+    expect(ep.activePeriods).toEqual([]);
+    expect(ep.datesKnown).toBe(false);
+    expect(ep.activeNow).toBe(true);
+    expect(closedFacilityIds(alerts, now)).toContain('907');
+    const real = alerts.find((a) => a.id === '1031518')!;
+    expect(real.datesKnown).toBe(true);
+    expect(real.activePeriods.length).toBe(1);
+  });
+
+  it('SpotHero premium-parking notices are informational, real disruptions are not', () => {
+    const info = alerts.filter((a) => a.informational).map((a) => a.id).sort();
+    expect(info).toEqual(['1037418', '1037420']);
+  });
+
   it('alerts whose periods are all in the future are not active', () => {
     for (const a of alerts) {
       if (a.activePeriods.length && a.activePeriods.every((p) => Date.parse(p.start) > now.getTime())) {
@@ -111,6 +128,46 @@ describe('normalizeAlerts (synthetic)', () => {
     expect(byId['noperiod-up'].activeNow).toBe(false);
     expect(byId['noperiod-on'].activeNow).toBe(true);
     expect(closedFacilityIds(alerts, now)).toEqual(['4', '5', '7']);
+  });
+
+  it('placeholder periods (epoch or start==end) fall back to lifecycle', () => {
+    const epoch = [{ start: '1969-12-31T19:00:00-05:00', end: '1969-12-31T19:00:00-05:00' }];
+    const json = {
+      data: [
+        rawAlert('ep-new', { lifecycle: 'NEW', active_period: epoch, informed_entity: [{ facility: '10' }] }),
+        rawAlert('ep-ongoing', { lifecycle: 'ONGOING', active_period: [{ start: '1970-01-01T00:00:00Z', end: null }], informed_entity: [{ facility: '11' }] }),
+        rawAlert('ep-upcoming', { lifecycle: 'UPCOMING', active_period: epoch, informed_entity: [{ facility: '12' }] }),
+        rawAlert('zero-len', { lifecycle: 'NEW', active_period: [{ start: '2026-10-24T10:00:00-04:00', end: '2026-10-24T10:00:00-04:00' }], informed_entity: [{ facility: '13' }] }),
+        rawAlert('mixed', { active_period: [...epoch, { start: '2027-01-01T00:00:00Z', end: null }], informed_entity: [{ facility: '14' }] }),
+      ],
+    };
+    const byId = Object.fromEntries(normalizeAlerts(json, parentOf, now).map((a) => [a.id, a]));
+    expect(byId['ep-new']).toMatchObject({ activeNow: true, datesKnown: false, activePeriods: [] });
+    expect(byId['ep-ongoing']).toMatchObject({ activeNow: true, datesKnown: false });
+    expect(byId['ep-upcoming']).toMatchObject({ activeNow: false, datesKnown: false });
+    expect(byId['zero-len']).toMatchObject({ activeNow: true, datesKnown: false });
+    // A real (future) period survives next to a placeholder: dates known, not active yet.
+    expect(byId.mixed).toMatchObject({ activeNow: false, datesKnown: true });
+    expect(byId.mixed.activePeriods).toHaveLength(1);
+    expect(closedFacilityIds(Object.values(byId), now)).toEqual(['10', '11', '13']);
+  });
+
+  it('informational: only NOTICE alerts about parking / SpotHero / amenities', () => {
+    const json = {
+      data: [
+        rawAlert('spot', { effect: 'NOTICE', header: 'Braintree Station notice: Premium parking is available at this location. You can buy premium passes and permits using SpotHero.' }),
+        rawAlert('amen', { effect: 'NOTICE', header: 'Alewife Station notice: amenities in the lobby are temporarily closed.' }),
+        rawAlert('signal', { effect: 'NOTICE', header: 'Orange Line: Signal maintenance near Community College' }),
+        rawAlert('garage', { effect: 'PARKING_CLOSURE', header: 'Parking garage closed' }),
+        rawAlert('elev', {}),
+      ],
+    };
+    const byId = Object.fromEntries(normalizeAlerts(json, parentOf, now).map((a) => [a.id, a]));
+    expect(byId.spot.informational).toBe(true);
+    expect(byId.amen.informational).toBe(true);
+    expect(byId.signal.informational).toBe(false);
+    expect(byId.garage.informational).toBe(false);
+    expect(byId.elev.informational).toBe(false);
   });
 
   it('toStationId maps or drops unknown ids', () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalizePredictions, normalizeVehicles, predictionsPath, VEHICLES_PATH } from '@/lib/mbta/live';
+import { latestVehicleUpdate, normalizePredictions, normalizeVehicles, predictionsPath, VEHICLES_PATH } from '@/lib/mbta/live';
 import { SUBWAY_ROUTES } from '@/lib/mbta/types';
 import preds from './fixtures/predictions-pktrm.json';
 import vehicles from './fixtures/vehicles.json';
@@ -49,24 +49,47 @@ describe('normalizePredictions (synthetic)', () => {
       row('cancel', { departure_time: null, arrival_time: null, schedule_relationship: 'CANCELLED' }),
       row('skip', { departure_time: '2026-10-24T12:05:00Z', schedule_relationship: 'SKIPPED' }),
       row('a', { departure_time: '2026-10-24T12:01:30Z' }),
-      row('b', { departure_time: null, arrival_time: '2026-10-24T12:03:00Z', arrival_uncertainty: 360 }),
+      row('arrive-only', { departure_time: null, arrival_time: '2026-10-24T12:03:00Z', arrival_uncertainty: 360 }),
+      row('sl', { departure_time: '2026-10-24T12:02:00Z' }, '741'),
+      row('cr', { departure_time: '2026-10-24T12:02:30Z' }, 'CR-Fairmount'),
       row('c', { departure_time: '2026-10-24T12:06:00Z', update_type: 'REVERSE_TRIP' }),
       row('d', { departure_time: '2026-10-24T12:09:00Z' }),
+      row('e', { departure_time: '2026-10-24T12:12:00Z' }),
+      // Terminal departure: no arrival_time, has departure_time.
+      row('term', { arrival_time: null, departure_time: '2026-10-24T12:04:00Z', direction_id: 1 }),
     ],
     included: [{ type: 'trip', id: 'ta', attributes: { headsign: 'Ashmont' } }],
   };
   const out = normalizePredictions(json, now, (id) => (id === '70075' ? 'place-pktrm' : undefined));
 
-  it('drops past, cancelled, skipped, and keeps next 3', () => {
-    expect(out.map((p) => p.time)).toEqual(['2026-10-24T12:01:30Z', '2026-10-24T12:03:00Z', '2026-10-24T12:06:00Z']);
+  it('drops past, cancelled, skipped, arrival-only and non-subway rows; keeps next 3 per group', () => {
+    const dir0 = out.filter((p) => p.directionId === 0);
+    expect(dir0.map((p) => p.time)).toEqual(['2026-10-24T12:01:30Z', '2026-10-24T12:06:00Z', '2026-10-24T12:09:00Z']);
     expect(out[0].minutesAway).toBe(1);
     expect(out[0].headsign).toBe('Ashmont');
     expect(out[0].stationId).toBe('place-pktrm');
-    expect(out.map((p) => p.approximate)).toEqual([false, true, true]);
+    expect(dir0.map((p) => p.approximate)).toEqual([false, true, false]);
+    expect(out.every((p) => p.routeId === 'Red')).toBe(true);
   });
 
-  it('paths include trip headsigns', () => {
+  it('keeps terminal departures (no arrival_time)', () => {
+    expect(out.filter((p) => p.directionId === 1).map((p) => p.time)).toEqual(['2026-10-24T12:04:00Z']);
+  });
+
+  it('fixture: every row has a departure and is subway', () => {
+    const fx = normalizePredictions(preds, new Date(preds.capturedAt), noParent);
+    const departs = new Set(
+      preds.data.filter((r) => r.attributes.departure_time).map((r) => r.attributes.departure_time as string),
+    );
+    for (const p of fx) {
+      expect(departs.has(p.time)).toBe(true);
+      expect(SUBWAY_ROUTES as readonly string[]).toContain(p.routeId);
+    }
+  });
+
+  it('paths include trip headsigns and the subway route_type filter', () => {
     expect(predictionsPath(['place-pktrm'])).toContain('filter[stop]=place-pktrm');
+    expect(predictionsPath(['place-pktrm'])).toContain('filter[route_type]=0,1');
     expect(predictionsPath(['place-pktrm'])).toContain('include=trip');
     expect(VEHICLES_PATH).toContain('filter[route]=Red,Orange,Blue,Green-B,Green-C,Green-D,Green-E,Mattapan');
   });
@@ -104,5 +127,33 @@ describe('normalizeVehicles', () => {
     const out = normalizeVehicles(json, (id) => (id === '70075' ? 'place-pktrm' : undefined));
     expect(out.map((x) => x.id)).toEqual(['1']);
     expect(out[0]).toMatchObject({ stationId: 'place-pktrm', headsign: 'Alewife', directionId: 1, bearing: 90 });
+  });
+
+  it('flags vehicles not updated for more than 5 minutes as stale', () => {
+    const now = new Date('2026-10-24T17:30:00Z');
+    const v = (id: string, updated: string) => ({
+      type: 'vehicle',
+      id,
+      attributes: { latitude: 42.35, longitude: -71.06, current_status: 'STOPPED_AT', direction_id: 0, updated_at: updated },
+      relationships: { route: { data: { id: 'Green-E' } } },
+    });
+    const json = {
+      data: [
+        v('fresh', '2026-10-24T13:29:30-04:00'),
+        v('edge', '2026-10-24T13:25:00-04:00'), // exactly 5 min: not stale
+        v('old', '2026-10-24T07:29:41-04:00'), // G-10008 case: 6 h old
+        v('noTime', ''),
+      ],
+    };
+    const byId = Object.fromEntries(normalizeVehicles(json, noParent, now).map((x) => [x.id, x.stale]));
+    expect(byId).toEqual({ fresh: false, edge: false, old: true, noTime: false });
+    expect(latestVehicleUpdate(json)?.toISOString()).toBe('2026-10-24T17:29:30.000Z');
+    expect(latestVehicleUpdate({ data: [] })).toBeNull();
+  });
+
+  it('fixture: stale is set on every vehicle', () => {
+    const at = latestVehicleUpdate(vehicles)!;
+    const out = normalizeVehicles(vehicles, noParent, at);
+    expect(out.every((x) => typeof x.stale === 'boolean')).toBe(true);
   });
 });
