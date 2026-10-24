@@ -1,10 +1,13 @@
 'use client';
-// "My stations": starred station ids kept in localStorage (on this device only).
-import { useCallback, useSyncExternalStore } from 'react';
+// "My stations": starred station ids kept in localStorage, and on the account when signed in.
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
+import { authClient } from './auth-client';
 
 const KEY = 'lastmile.myStations';
+const OWNER = 'lastmile.myStationsOwner'; // user id whose stars this device last synced
 const EMPTY: string[] = [];
 let cache: string[] | null = null;
+let syncedUser: string | null = null;
 const listeners = new Set<() => void>();
 
 function read(): string[] {
@@ -44,11 +47,50 @@ function subscribe(l: () => void) {
   };
 }
 
+function push(ids: string[]) {
+  // shortcut: a failed save (offline) is not retried, and the account list wins on the next load.
+  if (syncedUser) void authClient.updateUser({ myStations: ids });
+}
+
+/** Call on sign-out so the next person on this device does not see these stars. */
+export function clearMyStations() {
+  syncedUser = null;
+  try {
+    window.localStorage.removeItem(OWNER);
+  } catch {}
+  write([]);
+}
+
 export function useMyStations() {
   const ids = useSyncExternalStore(subscribe, read, () => EMPTY);
+  const { data: session } = authClient.useSession();
+  const userId = session?.user.id ?? null;
+  const saved = session?.user.myStations;
+
+  useEffect(() => {
+    if (!userId) {
+      syncedUser = null;
+      return;
+    }
+    if (syncedUser === userId) return;
+    syncedUser = userId;
+    const server = saved ?? [];
+    let owner: string | null = null;
+    try {
+      owner = window.localStorage.getItem(OWNER);
+      window.localStorage.setItem(OWNER, userId);
+    } catch {}
+    // First sign-in on this device: keep stars made while signed out. After that the account list wins.
+    const next = owner === userId ? server : [...new Set([...server, ...read()])];
+    write(next);
+    if (next.length !== server.length) push(next);
+  }, [userId, saved]);
+
   const toggle = useCallback((id: string) => {
     const cur = read();
-    write(cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]);
+    const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+    write(next);
+    push(next);
   }, []);
   const has = useCallback((id: string) => ids.includes(id), [ids]);
   return { ids, toggle, has };

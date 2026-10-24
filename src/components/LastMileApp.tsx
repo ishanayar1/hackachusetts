@@ -17,6 +17,7 @@ import { pointsGeojson, routeGeojson, stationsGeojson, vehiclesGeojson, walkGeoj
 import { useStaticFile, useStations, useStationsStatus, useVehicles } from '@/lib/ui/hooks';
 import { formatClock, isPartial, routeName } from '@/lib/ui/format';
 import { newlyBlocked, useMyStations, type StepFreeLevel } from '@/lib/ui/myStations';
+import Account from './Account';
 import BrokenNow from './BrokenNow';
 import CrashSpots from './CrashSpots';
 import HexDetails from './HexDetails';
@@ -285,7 +286,10 @@ export default function LastMileApp() {
             <h1 className="text-xl font-extrabold tracking-tight text-slate-900">LastMile</h1>
             <p className="text-sm text-slate-700">{t('Step-free MBTA trips')}</p>
           </div>
-          <LanguageSwitcher />
+          <div className="flex items-center gap-2">
+            <LanguageSwitcher />
+            <Account />
+          </div>
         </div>
         {!en && <p className="text-xs text-slate-700">{t('MBTA alert text is shown in English.')}</p>}
       </header>
