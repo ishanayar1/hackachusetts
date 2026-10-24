@@ -1,5 +1,5 @@
 // GET /api/crash/locations?q=&limit=50&sort=recorded|model
-// Recorded crash history per area (precomputed static data, 2015 to 2026-08). Not live and not a prediction.
+// Recorded crash history per intersection (precomputed static data, 2015 to 2026-08). Not live and not a prediction.
 // Envelope `source` is 'cache': the data is our stored copy, not an MBTA call; fetchedAt is when this server loaded it.
 import { connection } from 'next/server';
 import { parseCrashQuery, queryCrashSpots } from '@/lib/crash';

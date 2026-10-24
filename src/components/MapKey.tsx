@@ -54,7 +54,7 @@ export default function MapKey({ mode, onMode }: { mode: CrashMode; onMode: (m: 
         {mode !== 'off' && (
           <div>
             <p className="font-semibold">
-              {mode === 'model' ? 'Estimated crashes per area (team model)' : 'Pedestrian & bike crashes per area'}
+              {mode === 'model' ? 'Estimated crashes per intersection (team model)' : 'Pedestrian & bike crashes per intersection'}
             </p>
             <ul className="mt-1 space-y-1">
               {bins.map((b, i) => (
@@ -73,7 +73,7 @@ export default function MapKey({ mode, onMode }: { mode: CrashMode; onMode: (m: 
             {mode === 'model' && (
               <p className="mt-1 text-slate-800">Model estimate from police-reported crashes. Not a guarantee.</p>
             )}
-            <p className="mt-1 text-slate-700">Historical, not live. Tap an area for its numbers.</p>
+            <p className="mt-1 text-slate-700">Historical, not live. Tap an intersection for its numbers.</p>
           </div>
         )}
       </div>
